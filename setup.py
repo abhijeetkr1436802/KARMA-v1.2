@@ -36,15 +36,53 @@ def build_standalone_app():
     # Install PyInstaller if missing
     install_pyinstaller()
 
-    # PyInstaller arguments
+        # PyInstaller arguments
     # Bundles frontend, backend, config, and assets into standalone package
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--noconfirm",
         "--clean",
         "--name=KARMA_Cloud_SIEM",
+        "--onedir",
+        # Bundle data directories (frontend assets & backend package)
         f"--add-data=frontend{os.pathsep}frontend",
         f"--add-data=backend{os.pathsep}backend",
+        # Force-collect all submodules & data for third-party deps that PyInstaller
+        # cannot statically trace (e.g. fastapi.middleware, uvicorn/lupa workers,
+        # paramiko transport, websockets protocols, pydantic types)
+        "--collect-submodules=fastapi",
+        "--collect-submodules=uvicorn",
+        "--collect-submodules=paramiko",
+        "--collect-submodules=websockets",
+        "--collect-submodules=pydantic",
+        "--collect-all=fastapi",
+        "--collect-all=uvicorn",
+        "--collect-all=paramiko",
+        "--collect-all=websockets",
+        "--collect-all=pydantic",
+        "--hidden-import=backend",
+        "--hidden-import=backend.config",
+        "--hidden-import=backend.database",
+        "--hidden-import=backend.app",
+        "--hidden-import=backend.honeytokens",
+        "--hidden-import=backend.decoy_state",
+        "--hidden-import=backend.launcher_gui",
+        "--hidden-import=backend.tester_gui",
+        "--hidden-import=backend.engine",
+        "--hidden-import=backend.engine.active_defense",
+        "--hidden-import=backend.engine.ai_analyst",
+        "--hidden-import=backend.engine.csv_logger",
+        "--hidden-import=backend.engine.ai_chat",
+        "--hidden-import=backend.engine.mitre_mapper",
+        "--hidden-import=backend.engine.phishing_analyzer",
+        "--hidden-import=backend.engine.threat_score",
+        "--hidden-import=backend.sensors",
+        "--hidden-import=backend.sensors.raw_decoy",
+        "--hidden-import=backend.sensors.ssh_honeypot",
+        "--hidden-import=backend.sensors.web_honeypot",
+        # Ensure Python's built-in _socket & selectors are bundled for socket sensors
+        "--hidden-import=_socket",
+        "--hidden-import=selectors",
     ]
 
     if os.path.exists(icon_path):

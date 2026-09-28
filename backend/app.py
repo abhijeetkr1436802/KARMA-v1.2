@@ -327,7 +327,87 @@ async def real_admin_login():
 async def real_admin_authenticate(request: Request, username: str = Form(...), password: str = Form(...)):
     client_ip = request.client.host if request.client else "127.0.0.1"
 
-    # Honeytoken Decoy Trap Trigger
+    # Demo Production Vault Credentials shown on the login page
+    VALID_USERNAME = "admin@aegis-corp.com"
+    VALID_PASSWORD = "AdminPass2026!"
+
+    # If the correct demo credentials are provided, grant access to the vault
+    if username == VALID_USERNAME and password == VALID_PASSWORD:
+        return HTMLResponse(f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Aegis Production Vault — Access Granted</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            background: #0c101c;
+            color: #f8fafc;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }}
+        .card {{
+            background: #172033;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            padding: 40px 36px;
+            border-radius: 26px;
+            width: 460px;
+            max-width: 100%;
+            box-shadow: 0 0 30px rgba(16,185,129,0.15);
+        }}
+        .brand-icon {{
+            width: 52px; height: 52px; border-radius: 18px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 26px; margin: 0 auto 16px auto;
+        }}
+        h2 {{ color: #10b981; font-size: 22px; font-weight: 800; text-align: center; }}
+        .badge {{
+            display: inline-block; background: rgba(16,185,129,0.15);
+            color: #10b981; border: 1px solid rgba(16,185,129,0.3);
+            padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700;
+            margin-left: 8px;
+        }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 22px; font-size: 13px; }}
+        th, td {{ padding: 8px 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.06); }}
+        th {{ color: #94a3b8; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }}
+        td {{ color: #cbd5e1; }}
+        code {{ background: #111726; padding: 2px 6px; border-radius: 4px; color: #38bdf8; font-size: 12px; }}
+        .attribution {{
+            margin-top: 24px; border-top: 1px dashed rgba(255,255,255,0.08);
+            padding-top: 14px; font-size: 10.5px; color: #64748b; text-align: center; line-height: 1.5;
+        }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="brand-icon">🔓</div>
+        <h2>Aegis Production Vault <span class="badge">ACCESS GRANTED</span></h2>
+        <p style="text-align: center; color: #94a3b8; font-size: 13px; margin-top: 12px;">
+            Authenticated Corporate Portal (Port 8000)
+        </p>
+        <table>
+            <tr><th>Operator</th><td>{username}</td></tr>
+            <tr><th>Client IP</th><td>{client_ip}</td></tr>
+            <tr><th>Vault</th><td><code>aegis-prod-vault-8000</code></td></tr>
+            <tr><th>Status</th><td><span style="color:#10b981; font-weight:700;">🔒 Secure Session Active</span></td></tr>
+        </table>
+        <div class="attribution">
+            The Oxford Evening Polytechnic • Cyber Security (Sem VI)<br>
+            Guide: Mr. Subhash J R | Team: Abhijeet, Kanaka, Raghunandan, Sanjay Kashyap
+        </div>
+    </div>
+</body>
+</html>""", status_code=200)
+
+    # Honeytoken Decoy Trap Trigger - only for invalid credentials
     event_data = {
         "attacker_ip": client_ip,
         "port": 8000,
