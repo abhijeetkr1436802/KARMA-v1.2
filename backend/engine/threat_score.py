@@ -5,8 +5,8 @@ Computes real-time threat scores (0 - 100) per event and cumulative attacker ris
 
 def calculate_event_risk(base_risk, attempt_count=1, repeats=0):
     # Dynamic multiplier based on frequency
-    freq_boost = min(30, (attempt_count - 1) * 5)
-    final_score = min(100, base_risk + freq_boost)
+    freq_boost = min(30, max(0, attempt_count - 1) * 5)
+    final_score = max(0, min(100, base_risk + freq_boost))
 
     if final_score >= 85:
         severity = "CRITICAL"

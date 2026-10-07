@@ -3,63 +3,41 @@ K.A.R.M.A Network Decoy Sensors (Ports 21 FTP, 23 Telnet, 3389 RDP)
 Captures network port scans, banner enumeration, and unencrypted Telnet/FTP probes.
 """
 
+from backend.database import mark_event_quarantine
+
 import socket
 import threading
 import time
 from backend.config import DECOY_PORTS
+from backend import config
 from backend.engine.mitre_mapper import map_payload_to_mitre
 from backend.engine.threat_score import calculate_event_risk
 from backend.database import log_attack_event
 from backend.engine.active_defense import active_defense_engine
 
 # Global reference for stopping sockets
-_raw_decoy_instance = None
+
+from backend.sensors.tcp_server import BoundedTCPServer
+from backend.database import is_quarantined, get_attempt_count
+
 
 class RawDecoyServer:
     def __init__(self, ports=DECOY_PORTS, broadcast_callback=None):
-        global _raw_decoy_instance
         self.ports = ports
         self.broadcast_callback = broadcast_callback
-        self.threads = []
-        self.sockets = []
+        self.listeners = []
         self.running = False
-        _raw_decoy_instance = self
 
     def start(self):
         self.running = True
-        for p in self.ports:
-            t = threading.Thread(target=self._listen_port, args=(p,), daemon=True)
-            t.start()
-            self.threads.append(t)
-
-    def _listen_port(self, port):
-        from backend.decoy_state import is_port_enabled
-        if not is_port_enabled(port):
-            print(f"[Port Scan Decoy Sensor] Port {port} is DISABLED in launcher config. Skipping socket bind.")
-            return
-
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.bind(("0.0.0.0", port))
-            sock.listen(5)
-            self.sockets.append(sock)
-            print(f"[Port Scan Decoy Sensor] Listening on port {port}...")
-
-            while self.running:
-                try:
-                    client_sock, client_addr = sock.accept()
-                    client_ip = client_addr[0]
-
-                    threading.Thread(
-                        target=self._handle_client_connection, 
-                        args=(client_sock, client_ip, port), 
-                        daemon=True
-                    ).start()
-                except Exception:
-                    break
-        except Exception as e:
-            print(f"[Port Scan Decoy Sensor] Listening error on port {port}: {e}")
+            for port in self.ports:
+                listener = BoundedTCPServer(port, lambda sock, ip, p=port: self._handle_client_connection(sock, ip, p), host=config.SENSOR_HOST)
+                listener.start()
+                self.listeners.append(listener)
+        except Exception:
+            self.stop()
+            raise
 
     def _handle_client_connection(self, client_sock, client_ip, port):
         try:
@@ -68,7 +46,7 @@ class RawDecoyServer:
             # INTERACTIVE FTP DECOY (PORT 21)
             if port == 21:
                 client_sock.sendall(b"220 ProFTPD 1.3.5 Server Ready.\r\n")
-                while self.running:
+                while self.running and not is_quarantined(client_ip):
                     data = client_sock.recv(1024)
                     if not data:
                         break
@@ -97,7 +75,7 @@ class RawDecoyServer:
             # INTERACTIVE TELNET DECOY (PORT 23)
             elif port == 23:
                 client_sock.sendall(b"\r\nUbuntu 22.04 LTS aegis-gateway\r\naegis-gateway login: ")
-                while self.running:
+                while self.running and not is_quarantined(client_ip):
                     data = client_sock.recv(1024)
                     if not data:
                         break
@@ -135,8 +113,8 @@ class RawDecoyServer:
                 pass
 
     def _log_and_broadcast(self, client_ip, port, service_name, attack_type, payload_info, default_mitre):
-        mitre = map_payload_to_mitre("RAW_DECOY", "port_scan", payload_info)
-        score, severity = calculate_event_risk(mitre['risk_score'])
+        mitre = map_payload_to_mitre("RAW_DECOY", "command_execution" if default_mitre == "T1059" else "port_scan", payload_info)
+        score, severity = calculate_event_risk(mitre['risk_score'], get_attempt_count(client_ip) + 1)
 
         log_id = log_attack_event(
             attacker_ip=client_ip,
@@ -155,6 +133,7 @@ class RawDecoyServer:
         geo = get_geo_info(client_ip)
 
         quarantined, _ = active_defense_engine.process_event(client_ip, score, mitre['mitre_name'])
+        mark_event_quarantine(log_id, quarantined)
 
         if self.broadcast_callback:
             self.broadcast_callback({
@@ -180,13 +159,6 @@ class RawDecoyServer:
 
     def stop(self):
         self.running = False
-        for s in self.sockets:
-            try:
-                s.close()
-            except Exception:
-                pass
-
-def stop_raw_sensors():
-    global _raw_decoy_instance
-    if _raw_decoy_instance:
-        _raw_decoy_instance.stop()
+        for listener in self.listeners:
+            listener.stop()
+        self.listeners.clear()

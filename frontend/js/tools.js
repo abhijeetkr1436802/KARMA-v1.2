@@ -276,7 +276,7 @@ function renderEmlPhishingReport(data) {
     const output = document.getElementById("phishingResultContainer");
     if (!output) return;
 
-    const score = data.risk_score || 0;
+    const score = Math.max(0, Math.min(100, Number(data.risk_score) || 0));
     const verdict = data.verdict || "UNKNOWN";
     const cat = data.threat_category || "EML Forensic Scan";
     const headers = data.parsed_headers || {};
@@ -293,7 +293,7 @@ function renderEmlPhishingReport(data) {
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">
                 <div>
                     <span style="font-size: 11px; color: var(--text-muted); font-family: monospace;">File: <code>${escapeHTML(headers.filename || 'email.eml')}</code> • Engine: ${escapeHTML(data.analysis_engine || 'DeepSeek AI')}</span>
-                    <h3 style="margin-top: 2px; font-size: 16px; color: var(--text-primary); font-weight: 700;">Verdict: <span style="color: ${color};">${verdict}</span></h3>
+                    <h3 style="margin-top: 2px; font-size: 16px; color: var(--text-primary); font-weight: 700;">Verdict: <span style="color: ${color};">${escapeHTML(verdict)}</span></h3>
                 </div>
                 <div style="text-align: right;">
                     <div style="font-size: 24px; font-weight: 800; color: ${color};">${score} <span style="font-size: 14px;">/ 100</span></div>

@@ -1,826 +1,385 @@
-"""
-K.A.R.M.A Cloud SIEM - Core Application Engine & API Gateway
-Authors: Abhijeet Kumar, Kanaka C, Raghunandan T V, Sanjay Kashyap
-Project Guide: Mr. Subhash J R (Dept of Computer Science & Engineering)
-
-Handles FastAPI REST endpoints, WebSocket real-time telemetry streaming,
-honeytoken path traps, and session audit log management.
-"""
-
-import os
+"""Authenticated management API. Public traps run on the web sensor port."""
 import asyncio
-import time
 import csv
-from typing import List
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Form, Request, Body, UploadFile, File
-from fastapi.middleware.cors import CORSMiddleware
+import logging
+import secrets
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Literal
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Form, Request, UploadFile, File, Query
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
-from pydantic import BaseModel
-
-from backend.config import PORT_API, PORT_SSH_HONEYPOT, PORT_WEB_HONEYPOT, DECOY_PORTS
-from backend.database import (
-    init_db, get_recent_logs, get_attackers_list, get_mitre_stats,
-    get_honeytokens, get_quarantine_list, clear_all_data, get_db, get_total_attack_count
-)
-from backend.engine.ai_analyst import generate_ai_threat_summary, generate_single_event_ai_report
+from pydantic import BaseModel, Field, IPvAnyAddress
+from starlette.concurrency import run_in_threadpool
+from backend import config, database as db
+from backend.security import RequestGuard, load_admin_token, session_value, COOKIE_NAME, SESSION_SECONDS
 from backend.engine.csv_logger import audit_csv_logger
 from backend.engine.active_defense import active_defense_engine
+from backend.engine.ai_analyst import generate_ai_threat_summary, generate_single_event_ai_report
 from backend.honeytokens import create_honeytoken
-from backend.sensors.ssh_honeypot import SSHHoneypotServer
-from backend.sensors.web_honeypot import WebHoneypotServer, set_web_broadcast_callback
-from backend.sensors.raw_decoy import RawDecoyServer
-from backend.decoy_state import get_all_decoys, toggle_decoy, is_decoy_enabled, add_custom_decoy
-from backend.database import log_attack_event
-from backend.engine.mitre_mapper import map_payload_to_mitre
-from backend.engine.threat_score import calculate_event_risk
-import threading
+from backend.decoy_state import initialize_decoys, toggle_decoy, add_custom_decoy
+from backend.sensors.manager import SensorManager
 
-app = FastAPI(title="Aegis-SOC Threat Deception Platform", version="1.0.0")
+log = logging.getLogger(__name__)
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
-
-if os.path.exists(FRONTEND_DIR):
-    app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
-
-# WebSocket Connection Manager
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self.connections = {}
+        self.loop = None
+        self.dropped = 0
+
+    async def connect(self, websocket):
+        if len(self.connections) >= 64:
+            await websocket.close(code=1013)
+            return None
+        await websocket.accept()
+        queue = asyncio.Queue(maxsize=100)
+        self.connections[websocket] = queue
+        return queue
+
+    def enqueue(self, data):
+        for queue in list(self.connections.values()):
+            if queue.full():
+                queue.get_nowait()
+                self.dropped += 1
+            queue.put_nowait(data)
+
+    def sync_broadcast(self, data):
+        # Always publish the persisted canonical event, including ID and timestamp.
+        event = db.get_event(data.get("id")) if data.get("id") else None
+        if event:
+            event["quarantined"] = data.get("quarantined", False)
+            audit_csv_logger.log_event(event)
+            if self.loop and self.loop.is_running():
+                self.loop.call_soon_threadsafe(self.enqueue, event)
+
+    async def close(self):
+        for ws in list(self.connections):
+            try:
+                await ws.close(code=1001)
+            except RuntimeError:
+                pass
+        self.connections.clear()
         self.loop = None
 
-    def set_loop(self, loop):
-        self.loop = loop
-
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-
-    def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
-
-    async def broadcast_json(self, data: dict):
-        for connection in list(self.active_connections):
-            try:
-                await connection.send_json(data)
-            except Exception:
-                self.disconnect(connection)
-
-    def sync_broadcast(self, data: dict):
-        try:
-            audit_csv_logger.log_event(data)
-        except Exception as e:
-            print("[CSV Logger Broadcast Error]:", e)
-
-        if self.loop and self.loop.is_running():
-            asyncio.run_coroutine_threadsafe(self.broadcast_json(data), self.loop)
 
 manager = ConnectionManager()
+sensors = SensorManager(manager.sync_broadcast)
+ai_slots = asyncio.Semaphore(4)
 
-# Data Models
+
+@asynccontextmanager
+async def lifespan(app):
+    from backend.runtime import InstanceLock
+    with InstanceLock():
+        app.state.admin_token = load_admin_token()
+        await run_in_threadpool(db.init_db)
+        await run_in_threadpool(initialize_decoys)
+        manager.loop = asyncio.get_running_loop()
+        audit_csv_logger.start()
+        try:
+            if config.ENABLE_SENSORS:
+                await run_in_threadpool(sensors.start)
+            yield
+        finally:
+            await run_in_threadpool(sensors.stop)
+            await manager.close()
+            audit_csv_logger.stop()
+
+
+app = FastAPI(title="KARMA SIEM", version="2.0.0", lifespan=lifespan,
+              docs_url=None, redoc_url=None, openapi_url=None)
+app.add_middleware(RequestGuard)
+app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
+
+@app.get("/healthz")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page():
+    return """<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>KARMA sign in</title><style>body{background:#101726;color:#eee;font:18px system-ui;max-width:440px;margin:12vh auto;padding:24px}input,button{box-sizing:border-box;width:100%;padding:14px;margin-top:16px}p{line-height:1.6}</style>
+<h1>KARMA operator sign in</h1><p>Enter the admin token configured for this installation. Local installations store the generated token in the KARMA data directory.</p>
+<form method="post" action="/login"><label for="token">Admin token</label><input id="token" name="token" type="password" required autocomplete="current-password"><button>Sign in</button></form></html>"""
+
+
+@app.post("/login")
+def login(request: Request, token: str = Form(..., max_length=512)):
+    if not secrets.compare_digest(token, request.app.state.admin_token):
+        raise HTTPException(401, "Invalid credentials")
+    response = RedirectResponse("/", status_code=303)
+    response.set_cookie(COOKIE_NAME, session_value(request.app.state.admin_token),
+                        httponly=True, secure=config.COOKIE_SECURE, samesite="strict", max_age=SESSION_SECONDS)
+    return response
+
+
+@app.post("/api/logout")
+def logout():
+    response = RedirectResponse("/login", status_code=303)
+    response.delete_cookie(COOKIE_NAME)
+    return response
+
+
+@app.get("/")
+def root():
+    return FileResponse(FRONTEND_DIR / "index.html")
+
+
 class QuarantineRequest(BaseModel):
-    ip: str
-    action: str  # "BLOCK" or "UNBLOCK"
-    reason: str = "Admin Intervention"
+    ip: IPvAnyAddress
+    action: Literal["BLOCK", "UNBLOCK"]
+    reason: str = Field(default="Admin intervention", max_length=500)
+
 
 class HoneytokenRequest(BaseModel):
-    name: str
-    type: str
+    name: str = Field(min_length=1, max_length=120)
+    type: Literal["API Key", "Credentials", "Decoy URL"]
+
 
 class DecoyToggleRequest(BaseModel):
-    id: str
-    enabled: bool = None
+    id: str = Field(min_length=1, max_length=80)
+    enabled: bool | None = None
+
 
 class DecoyAddRequest(BaseModel):
-    name: str
-    port: int
-    service_type: str = "Custom Decoy"
-    description: str = ""
+    name: str = Field(min_length=1, max_length=120)
+    port: int = Field(ge=1, le=65535)
+    service_type: str = Field(default="Custom Decoy", max_length=80)
+    description: str = Field(default="", max_length=500)
 
-# API Routes
-@app.get("/")
-async def root(request: Request):
-    client_ip = request.client.host if request.client else "127.0.0.1"
-
-    # Allow Localhost Access for Admin
-    if client_ip in ["127.0.0.1", "::1", "localhost"]:
-        index_path = os.path.join(FRONTEND_DIR, "index.html")
-        if os.path.exists(index_path):
-            return FileResponse(index_path)
-
-    # Block External Hacker IP & Trigger Honeytoken Trap
-    event_data = {
-        "attacker_ip": client_ip,
-        "port": 8000,
-        "decoy_service": "DECOY_API_KEYS",
-        "attack_type": "Unauthorized SIEM Console Scan",
-        "payload": f"External Host Attempted Unauthenticated Access to SIEM Console on Port 8000",
-        "mitre_id": "T1078",
-        "mitre_name": "Valid Accounts / Honeytoken Access",
-        "mitre_tactic": "Initial Access",
-        "risk_score": 90,
-        "severity": "CRITICAL"
-    }
-
-    log_attack_event(**event_data)
-    active_defense_engine.enforce_ip_quarantine(client_ip, "Unauthorized External Dashboard Probe")
-    event_data["quarantined"] = True
-    manager.sync_broadcast(event_data)
-
-    return HTMLResponse(f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <title>403 Forbidden - K.A.R.M.A Threat Deception Platform</title>
-        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-        <style>
-            body {{ background: #090d16; color: #f3f4f6; font-family: 'Plus Jakarta Sans', sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
-            .card {{ background: #101726; border: 1px solid #ef4444; padding: 40px; border-radius: 12px; width: 440px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }}
-            h2 {{ color: #ef4444; margin-top: 0; font-size: 20px; font-weight: 700; }}
-            .status-box {{ background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 15px; border-radius: 8px; font-weight: bold; font-size: 13px; margin-top: 20px; line-height: 1.5; }}
-            .info {{ color: #9ca3af; font-size: 13px; margin-top: 15px; }}
-            .attribution {{ margin-top: 24px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px; font-size: 11px; color: #6b7280; }}
-        </style>
-    </head>
-    <body>
-        <div class="card">
-            <h2>🚨 403 ACCESS FORBIDDEN</h2>
-            <p class="info">K.A.R.M.A Active Threat Deception Platform</p>
-            <div class="status-box">
-                ⚠️ UNAUTHORIZED EXTERNAL ACCESS DENIED<br>
-                <span style="font-size: 11px; font-weight: normal; color: #9ca3af;">Attacker IP: {client_ip} | Quarantined by Active Defense</span>
-            </div>
-            <p class="info">Remote access to the SIEM Control Console is restricted. Your IP has been logged and quarantined.</p>
-            <div class="attribution">
-                The Oxford Evening Polytechnic • Cyber Security (Sem VI)<br>
-                Guide: Mr. Subhash J R | Team: Abhijeet, Kanaka, Raghunandan, Sanjay Kashyap
-            </div>
-        </div>
-    </body>
-    </html>
-    """, status_code=403)
-
-@app.get("/real-admin", response_class=HTMLResponse)
-async def real_admin_login():
-    return HTMLResponse("""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <title>Aegis Production Vault — Secure Login</title>
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-        <style>
-            *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-            body {
-                background: #0c101c;
-                color: #f8fafc;
-                font-family: 'Plus Jakarta Sans', sans-serif;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 100vh;
-                padding: 20px;
-            }
-            .card {
-                background: #172033;
-                border: 1px solid rgba(255,255,255,0.08);
-                padding: 40px 36px;
-                border-radius: 26px;
-                width: 400px;
-                max-width: 100%;
-                box-shadow: 12px 24px 44px rgba(0, 0, 0, 0.7),
-                            inset 2px 2px 5px rgba(255, 255, 255, 0.12),
-                            inset -4px -4px 10px rgba(0, 0, 0, 0.7);
-            }
-            .brand-icon {
-                width: 52px;
-                height: 52px;
-                border-radius: 18px;
-                background: linear-gradient(135deg, #10b981, #059669);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 26px;
-                margin: 0 auto 16px auto;
-                box-shadow: 6px 12px 20px rgba(16, 185, 129, 0.35),
-                            inset 2px 2px 4px rgba(255, 255, 255, 0.5),
-                            inset -2px -2px 4px rgba(0, 0, 0, 0.3);
-            }
-            .brand { text-align: center; margin-bottom: 24px; }
-            .brand h2 { color: #f8fafc; margin: 0; font-size: 20px; font-weight: 800; }
-            .brand p { font-size: 12px; color: #94a3b8; margin-top: 4px; font-weight: 500; }
-            .form-group { margin-bottom: 18px; }
-            label {
-                display: block;
-                margin-bottom: 8px;
-                font-size: 12px;
-                color: #94a3b8;
-                font-weight: 700;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-            }
-            input {
-                width: 100%;
-                padding: 12px 14px;
-                border-radius: 14px;
-                border: 1px solid rgba(255,255,255,0.08);
-                background: #111726;
-                color: #fff;
-                font-family: inherit;
-                font-size: 13.5px;
-                outline: none;
-                box-shadow: inset 3px 3px 7px rgba(0, 0, 0, 0.7),
-                            inset -1px -1px 3px rgba(255, 255, 255, 0.05);
-                transition: border-color 0.2s;
-            }
-            input:focus { border-color: #10b981; }
-            button {
-                width: 100%;
-                padding: 13px;
-                border-radius: 14px;
-                border: 1px solid rgba(255, 255, 255, 0.3);
-                background: linear-gradient(135deg, #10b981, #059669);
-                color: #ffffff;
-                font-weight: 800;
-                cursor: pointer;
-                font-size: 14px;
-                font-family: inherit;
-                box-shadow: 6px 14px 24px rgba(0, 0, 0, 0.6),
-                            inset 2px 2px 4px rgba(255, 255, 255, 0.4),
-                            inset -3px -3px 6px rgba(0, 0, 0, 0.6);
-                transition: transform 0.15s cubic-bezier(0.2, 0.8, 0.4, 1.2), box-shadow 0.15s ease;
-                margin-top: 6px;
-            }
-            button:hover { transform: translateY(-2px); }
-            button:active { transform: translateY(2px) scale(0.98); }
-            .creds-hint {
-                background: rgba(16, 185, 129, 0.08);
-                border: 1px solid rgba(16, 185, 129, 0.3);
-                padding: 14px;
-                border-radius: 16px;
-                font-size: 11.5px;
-                color: #10b981;
-                margin-top: 22px;
-                text-align: center;
-                line-height: 1.6;
-                box-shadow: 4px 8px 16px rgba(0,0,0,0.35),
-                            inset 1px 1px 3px rgba(255,255,255,0.1),
-                            inset -2px -2px 4px rgba(0,0,0,0.5);
-            }
-            .attribution {
-                margin-top: 20px;
-                border-top: 1px dashed rgba(255,255,255,0.08);
-                padding-top: 14px;
-                font-size: 10.5px;
-                color: #64748b;
-                text-align: center;
-                line-height: 1.5;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="card">
-            <div class="brand-icon">🔒</div>
-            <div class="brand">
-                <h2>Aegis Production Vault</h2>
-                <p>Authenticated Corporate Portal (Port 8000)</p>
-            </div>
-            <form method="POST" action="/real-admin">
-                <div class="form-group">
-                    <label>Admin ID / Email</label>
-                    <input type="text" name="username" value="admin@aegis-corp.com" required>
-                </div>
-                <div class="form-group">
-                    <label>Password</label>
-                    <input type="password" name="password" placeholder="Enter Password" required>
-                </div>
-                <button type="submit">Log In to Production</button>
-            </form>
-            <div class="creds-hint">
-                <strong>Demo Access Credentials:</strong><br>
-                User: <code>admin@aegis-corp.com</code><br>
-                Pass: <code>AdminPass2026!</code>
-            </div>
-            <div class="attribution">
-                The Oxford Evening Polytechnic • Cyber Security (Sem VI)<br>
-                Guide: Mr. Subhash J R | Team: Abhijeet, Kanaka, Raghunandan, Sanjay Kashyap
-            </div>
-        </div>
-    </body>
-    </html>
-    """)
-
-@app.post("/real-admin", response_class=HTMLResponse)
-async def real_admin_authenticate(request: Request, username: str = Form(...), password: str = Form(...)):
-    client_ip = request.client.host if request.client else "127.0.0.1"
-
-    # Demo Production Vault Credentials shown on the login page
-    VALID_USERNAME = "admin@aegis-corp.com"
-    VALID_PASSWORD = "AdminPass2026!"
-
-    # If the correct demo credentials are provided, grant access to the vault
-    if username == VALID_USERNAME and password == VALID_PASSWORD:
-        return HTMLResponse(f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Aegis Production Vault — Access Granted</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>
-        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-        body {{
-            background: #0c101c;
-            color: #f8fafc;
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            padding: 20px;
-        }}
-        .card {{
-            background: #172033;
-            border: 1px solid rgba(16, 185, 129, 0.3);
-            padding: 40px 36px;
-            border-radius: 26px;
-            width: 460px;
-            max-width: 100%;
-            box-shadow: 0 0 30px rgba(16,185,129,0.15);
-        }}
-        .brand-icon {{
-            width: 52px; height: 52px; border-radius: 18px;
-            background: linear-gradient(135deg, #10b981, #059669);
-            display: flex; align-items: center; justify-content: center;
-            font-size: 26px; margin: 0 auto 16px auto;
-        }}
-        h2 {{ color: #10b981; font-size: 22px; font-weight: 800; text-align: center; }}
-        .badge {{
-            display: inline-block; background: rgba(16,185,129,0.15);
-            color: #10b981; border: 1px solid rgba(16,185,129,0.3);
-            padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700;
-            margin-left: 8px;
-        }}
-        table {{ width: 100%; border-collapse: collapse; margin-top: 22px; font-size: 13px; }}
-        th, td {{ padding: 8px 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.06); }}
-        th {{ color: #94a3b8; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }}
-        td {{ color: #cbd5e1; }}
-        code {{ background: #111726; padding: 2px 6px; border-radius: 4px; color: #38bdf8; font-size: 12px; }}
-        .attribution {{
-            margin-top: 24px; border-top: 1px dashed rgba(255,255,255,0.08);
-            padding-top: 14px; font-size: 10.5px; color: #64748b; text-align: center; line-height: 1.5;
-        }}
-    </style>
-</head>
-<body>
-    <div class="card">
-        <div class="brand-icon">🔓</div>
-        <h2>Aegis Production Vault <span class="badge">ACCESS GRANTED</span></h2>
-        <p style="text-align: center; color: #94a3b8; font-size: 13px; margin-top: 12px;">
-            Authenticated Corporate Portal (Port 8000)
-        </p>
-        <table>
-            <tr><th>Operator</th><td>{username}</td></tr>
-            <tr><th>Client IP</th><td>{client_ip}</td></tr>
-            <tr><th>Vault</th><td><code>aegis-prod-vault-8000</code></td></tr>
-            <tr><th>Status</th><td><span style="color:#10b981; font-weight:700;">🔒 Secure Session Active</span></td></tr>
-        </table>
-        <div class="attribution">
-            The Oxford Evening Polytechnic • Cyber Security (Sem VI)<br>
-            Guide: Mr. Subhash J R | Team: Abhijeet, Kanaka, Raghunandan, Sanjay Kashyap
-        </div>
-    </div>
-</body>
-</html>""", status_code=200)
-
-    # Honeytoken Decoy Trap Trigger - only for invalid credentials
-    event_data = {
-        "attacker_ip": client_ip,
-        "port": 8000,
-        "decoy_service": "DECOY_API_KEYS",
-        "attack_type": "Honeytoken Credential Compromise",
-        "payload": f"Attempted Production Vault Login: username='{username}' pass='{password}'",
-        "mitre_id": "T1078",
-        "mitre_name": "Valid Accounts / Honeytoken Compromise",
-        "mitre_tactic": "Credential Access",
-        "risk_score": 95,
-        "severity": "CRITICAL"
-    }
-
-    log_attack_event(**event_data)
-    active_defense_engine.enforce_ip_quarantine(client_ip, "Honeytoken Vault Login Trap Hit")
-    event_data["quarantined"] = True
-    manager.sync_broadcast(event_data)
-
-    return JSONResponse({
-        "status": "QUARANTINED",
-        "error": "Honeytoken Trap Triggered",
-        "message": f"Attempted Production Vault Login: username='{username}'. IP {client_ip} has been quarantined."
-    }, status_code=403)
-
-# Dedicated Honeytoken Decoy Endpoints on Port 8000
-@app.get("/api/v1/auth/keys")
-@app.get("/api/v1/admin/db_export")
-@app.get("/secret-vault-admin-login-php")
-@app.get("/admin/login")
-async def honeytoken_path_trap(request: Request):
-    client_ip = request.client.host if request.client else "127.0.0.1"
-    path = request.url.path
-
-    event_data = {
-        "attacker_ip": client_ip,
-        "port": 8000,
-        "decoy_service": "DECOY_API_KEYS",
-        "attack_type": "Honeytoken Exfiltration Trap",
-        "payload": f"Unauthenticated Scanner Accessed Honeytoken Endpoint: '{path}'",
-        "mitre_id": "T1078",
-        "mitre_name": "Valid Accounts / Honeytoken Access",
-        "mitre_tactic": "Credential Access",
-        "risk_score": 95,
-        "severity": "CRITICAL"
-    }
-
-    log_attack_event(**event_data)
-    active_defense_engine.enforce_ip_quarantine(client_ip, f"Honeytoken Path Trap Triggered: {path}")
-    event_data["quarantined"] = True
-    manager.sync_broadcast(event_data)
-
-    return JSONResponse({
-        "status": "QUARANTINED",
-        "error": "Access Denied",
-        "message": f"Honeytoken Decoy Trap Triggered on '{path}'. Incident logged & IP {client_ip} quarantined by K.A.R.M.A Active Defense Engine."
-    }, status_code=403)
 
 @app.get("/api/status")
-async def get_system_status():
-    total_count = get_total_attack_count()
-    attackers = get_attackers_list()
-    quarantined = get_quarantine_list()
-    tokens = get_honeytokens()
-    all_decoys = get_all_decoys()
-    active_count = sum(1 for d in all_decoys if d.get("enabled"))
+def status():
+    decoys = sensors.status()
+    conn = db.get_db()
+    try:
+        web_count = conn.execute("SELECT COUNT(*) FROM attack_logs WHERE decoy_service='WEB_HONEYPOT'").fetchone()[0]
+        total = db.get_total_attack_count()
+        return {"platform": "KARMA SIEM", "status": "DEGRADED" if audit_csv_logger.last_error or any(d["status"] == "ERROR" for d in decoys) else "ONLINE",
+                "active_honeypots": decoys, "containment_scope": "KARMA sensors only; no host firewall changes",
+                "telemetry_dropped": manager.dropped, "audit_error": audit_csv_logger.last_error,
+                "metrics": {"total_attacks_logged": total, "web_events": web_count, "network_events": total-web_count,
+                            "unique_attackers": conn.execute("SELECT COUNT(*) FROM attackers").fetchone()[0],
+                            "quarantined_ips": len(db.get_quarantine_list()), "active_honeytokens": len(db.get_honeytokens()),
+                            "active_decoys": sum(d["status"] == "ACTIVE" for d in decoys), "total_decoys": len(decoys)}}
+    finally:
+        conn.close()
 
-    return {
-        "platform": "Aegis-SOC Threat Deception",
-        "status": "ONLINE",
-        "active_honeypots": [
-            {"name": d["name"], "port": d["port"], "status": "ACTIVE" if d.get("enabled") else "DISABLED"}
-            for d in all_decoys
-        ],
-        "metrics": {
-            "total_attacks_logged": total_count,
-            "unique_attackers": len(attackers),
-            "quarantined_ips": len(quarantined),
-            "active_honeytokens": len(tokens),
-            "active_decoys": active_count,
-            "total_decoys": len(all_decoys)
-        }
-    }
 
 @app.get("/api/logs")
-async def get_logs(limit: int = 50):
-    return get_recent_logs(limit)
+def logs(limit: int = Query(50, ge=1, le=1000)):
+    return db.get_recent_logs(limit)
+
 
 @app.get("/api/attackers")
-async def get_attackers():
-    return get_attackers_list()
+def attackers(limit: int = Query(1000, ge=1, le=1000), offset: int = Query(0, ge=0)):
+    return db.get_attackers_list(limit, offset)
+
 
 @app.get("/api/mitre")
-async def get_mitre():
-    return get_mitre_stats()
+def mitre():
+    return db.get_mitre_stats()
+
 
 @app.get("/api/honeytokens")
-async def get_tokens():
-    return get_honeytokens()
+def tokens():
+    return db.get_honeytokens()
+
 
 @app.post("/api/honeytokens/create")
-async def add_honeytoken(req: HoneytokenRequest):
+def add_token(req: HoneytokenRequest):
+    if len(db.get_honeytokens()) >= 1000:
+        raise HTTPException(409, "Maximum honeytoken count reached")
     return create_honeytoken(req.name, req.type)
 
+
 @app.get("/api/quarantine")
-async def get_quarantine():
-    return get_quarantine_list()
+def quarantine():
+    return db.get_quarantine_list()
+
 
 @app.post("/api/quarantine/toggle")
-async def toggle_quarantine(req: QuarantineRequest):
-    if req.action.upper() == "BLOCK":
-        active_defense_engine.manual_quarantine(req.ip, req.reason)
-        msg = f"IP {req.ip} added to quarantine."
+def toggle_quarantine(req: QuarantineRequest):
+    if req.action == "BLOCK":
+        active_defense_engine.manual_quarantine(str(req.ip), req.reason)
     else:
-        active_defense_engine.manual_unblock(req.ip)
-        msg = f"IP {req.ip} unblocked."
-    return {"status": "SUCCESS", "message": msg}
+        active_defense_engine.manual_unblock(str(req.ip))
+    return {"status": "SUCCESS", "scope": "KARMA sensors only"}
 
-@app.get("/api/ai-report/{ip}")
-async def get_ai_report(ip: str):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM attack_logs WHERE attacker_ip = ? ORDER BY id DESC', (ip,))
-    logs = [dict(r) for r in cursor.fetchall()]
-    cursor.execute('SELECT * FROM attackers WHERE ip = ?', (ip,))
-    attacker_row = cursor.fetchone()
-    attacker_profile = dict(attacker_row) if attacker_row else {}
-    conn.close()
-
-    report = generate_ai_threat_summary(ip, logs, attacker_profile)
-    return report
 
 @app.get("/api/ai-report/event/{log_id}")
-async def get_single_event_ai_report_api(log_id: int):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM attack_logs WHERE id = ?', (log_id,))
-    row = cursor.fetchone()
-    conn.close()
+def event_report(log_id: int):
+    event = db.get_event(log_id)
+    if not event:
+        raise HTTPException(404, "Event not found")
+    return generate_single_event_ai_report(event)
 
-    if not row:
-        raise HTTPException(status_code=404, detail="Attack log event not found")
 
-    event = dict(row)
-    report = generate_single_event_ai_report(event)
-    return report
+@app.get("/api/ai-report/{ip}")
+def attacker_report(ip: IPvAnyAddress):
+    conn = db.get_db()
+    try:
+        events = [dict(r) for r in conn.execute("SELECT * FROM attack_logs WHERE attacker_ip=? ORDER BY id DESC LIMIT 1000", (str(ip),))]
+        profile = conn.execute("SELECT * FROM attackers WHERE ip=?", (str(ip),)).fetchone()
+        if not events:
+            raise HTTPException(404, "No events for this IP")
+        return generate_ai_threat_summary(str(ip), events, dict(profile) if profile else {})
+    finally:
+        conn.close()
 
-@app.post("/api/simulator/launch")
-async def launch_simulator():
-    from backend.attack_simulator import run_full_attack_scenario
-    threading.Thread(target=run_full_attack_scenario, daemon=True).start()
-    return {"status": "SUCCESS", "message": "Attack simulation launched!"}
 
 @app.post("/api/reset")
-async def reset_data():
-    clear_all_data()
-    return {"status": "SUCCESS", "message": "System telemetry reset cleanly."}
+def reset():
+    db.clear_all_data()
+    return {"status": "SUCCESS"}
+
 
 @app.get("/api/decoys")
-async def list_decoys():
-    return get_all_decoys()
+def decoys():
+    return sensors.status()
+
 
 @app.post("/api/decoys/toggle")
-async def toggle_decoy_status(req: DecoyToggleRequest):
-    return toggle_decoy(req.id, req.enabled)
+def toggle(req: DecoyToggleRequest):
+    try:
+        result = toggle_decoy(req.id, req.enabled)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    sensors.reconcile()
+    return {**result, "listeners": sensors.status()}
+
 
 @app.post("/api/decoys/add")
-async def create_custom_decoy(req: DecoyAddRequest):
-    return add_custom_decoy(req.name, req.port, req.service_type, req.description)
-
-# Decoy API Trap Endpoints
-@app.get("/api/v1/auth/keys")
-async def decoy_api_auth_keys(request: Request):
-    if not is_decoy_enabled("api_auth_keys"):
-        return JSONResponse({"status": "error", "message": "Endpoint disabled"}, status_code=404)
-    
-    client_ip = request.client.host if request.client else "127.0.0.1"
-    payload = "Attempted API Key Harvesting / Exfiltration"
-    mitre = map_payload_to_mitre("DECOY_API", "api_key_harvesting", payload)
-    score, severity = calculate_event_risk(mitre['risk_score'])
-    
-    log_id = log_attack_event(
-        attacker_ip=client_ip,
-        port=8000,
-        decoy_service="DECOY_API_KEYS",
-        attack_type="Unauthenticated API Key Probe",
-        payload=payload,
-        mitre_id=mitre['mitre_id'],
-        mitre_name=mitre['mitre_name'],
-        mitre_tactic=mitre['mitre_tactic'],
-        risk_score=score,
-        severity=severity
-    )
-    
-    from backend.database import get_geo_info
-    geo = get_geo_info(client_ip)
-    quarantined, _ = active_defense_engine.process_event(client_ip, score, mitre['mitre_name'])
-    
-    manager.sync_broadcast({
-        "id": log_id,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "attacker_ip": client_ip,
-        "port": 8000,
-        "decoy_service": "DECOY_API_KEYS",
-        "attack_type": "Unauthenticated API Key Probe",
-        "payload": payload,
-        "mitre_id": mitre['mitre_id'],
-        "mitre_name": mitre['mitre_name'],
-        "mitre_tactic": mitre['mitre_tactic'],
-        "risk_score": score,
-        "severity": severity,
-        "quarantined": quarantined,
-        "country": geo['country'],
-        "city": geo['city'],
-        "lat": geo['lat'],
-        "lng": geo['lng'],
-        "flag": geo['flag']
-    })
-    return JSONResponse({"error": "Unauthorized", "message": "Honeytoken trigger recorded"}, status_code=401)
-
-@app.get("/api/v1/admin/db_export")
-async def decoy_api_db_export(request: Request):
-    if not is_decoy_enabled("api_db_export"):
-        return JSONResponse({"status": "error", "message": "Endpoint disabled"}, status_code=404)
-    
-    client_ip = request.client.host if request.client else "127.0.0.1"
-    payload = "Attempted Unauthorized Database Dump / Exfiltration"
-    mitre = map_payload_to_mitre("DECOY_API", "database_dump", payload)
-    score, severity = calculate_event_risk(mitre['risk_score'])
-    
-    log_id = log_attack_event(
-        attacker_ip=client_ip,
-        port=8000,
-        decoy_service="DECOY_API_DB_EXPORT",
-        attack_type="Rogue DB Export Attempt",
-        payload=payload,
-        mitre_id=mitre['mitre_id'],
-        mitre_name=mitre['mitre_name'],
-        mitre_tactic=mitre['mitre_tactic'],
-        risk_score=score,
-        severity=severity
-    )
-    
-    from backend.database import get_geo_info
-    geo = get_geo_info(client_ip)
-    quarantined, _ = active_defense_engine.process_event(client_ip, score, mitre['mitre_name'])
-    
-    manager.sync_broadcast({
-        "id": log_id,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "attacker_ip": client_ip,
-        "port": 8000,
-        "decoy_service": "DECOY_API_DB_EXPORT",
-        "attack_type": "Rogue DB Export Attempt",
-        "payload": payload,
-        "mitre_id": mitre['mitre_id'],
-        "mitre_name": mitre['mitre_name'],
-        "mitre_tactic": mitre['mitre_tactic'],
-        "risk_score": score,
-        "severity": severity,
-        "quarantined": quarantined,
-        "country": geo['country'],
-        "city": geo['city'],
-        "lat": geo['lat'],
-        "lng": geo['lng'],
-        "flag": geo['flag']
-    })
-    return JSONResponse({"error": "Forbidden", "message": "Honeytoken trigger recorded"}, status_code=403)
-
-@app.websocket("/ws/telemetry")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+def add_decoy(req: DecoyAddRequest):
     try:
-        while True:
-            _ = await websocket.receive_text()
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        result = add_custom_decoy(req.name, req.port, req.service_type, req.description)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    sensors.reconcile()
+    return {**result, "listeners": sensors.status()}
 
-def start_sensors(broadcast_cb):
-    # Initialize SQLite Database
-    init_db()
 
-    # Set Web Callback
-    set_web_broadcast_callback(broadcast_cb)
+def csv_path(filename):
+    if Path(filename).name != filename or not filename.startswith("karma_audit_") or not filename.endswith(".csv"):
+        raise HTTPException(400, "Invalid audit filename")
+    path = config.LOG_DIR / filename
+    if path.is_symlink() or not path.is_file() or path.resolve().parent != config.LOG_DIR.resolve():
+        raise HTTPException(404, "Audit file not found")
+    return path
 
-    # Start SSH Decoy
-    ssh_server = SSHHoneypotServer(port=PORT_SSH_HONEYPOT, broadcast_callback=broadcast_cb)
-    ssh_server.start()
-
-    # Start Web Admin Decoy
-    web_server = WebHoneypotServer(port=PORT_WEB_HONEYPOT)
-    web_server.start()
-
-    # Start Raw Port Scan Decoy
-    raw_server = RawDecoyServer(ports=DECOY_PORTS, broadcast_callback=broadcast_cb)
-    raw_server.start()
-
-    print("[Aegis-SOC Engine] All decoy sensors initialized & running!")
-
-@app.post("/api/tester/launch")
-async def launch_tester():
-    try:
-        import threading
-        from backend.tester_gui import launch_tester_gui
-        threading.Thread(target=launch_tester_gui, daemon=True).start()
-        return JSONResponse({"status": "SUCCESS", "message": "Tester/Attacker Suite Desktop Window Opened"})
-    except Exception as e:
-        return JSONResponse({"status": "ERROR", "message": str(e)}, status_code=500)
 
 @app.get("/api/logs/csv/list")
-async def list_csv_logs():
-    log_dir = "logs"
-    if not os.path.exists(log_dir):
-        return []
-    
-    files = []
-    for f in sorted(os.listdir(log_dir), reverse=True):
-        if f.endswith(".csv"):
-            fpath = os.path.join(log_dir, f)
-            size = os.path.getsize(fpath)
-            ctime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getctime(fpath)))
-            
-            line_count = 0
-            try:
-                with open(fpath, 'r', encoding='utf-8') as cf:
-                    line_count = max(0, sum(1 for _ in cf) - 1)
-            except Exception:
-                pass
-            
-            files.append({
-                "filename": f,
-                "size_bytes": size,
-                "created_time": ctime,
-                "row_count": line_count
-            })
-    return files
-
-@app.get("/api/logs/csv/view/{filename}")
-async def view_csv_log(filename: str):
-    log_dir = "logs"
-    fpath = os.path.join(log_dir, os.path.basename(filename))
-    if not os.path.exists(fpath):
-        raise HTTPException(status_code=404, detail="CSV Log File not found")
-
-    rows = []
-    with open(fpath, 'r', encoding='utf-8') as cf:
-        reader = csv.DictReader(cf)
-        for r in reader:
-            rows.append(r)
-    return {"filename": filename, "total_rows": len(rows), "rows": rows}
-
-@app.get("/api/logs/csv/download/{filename}")
-async def download_csv_log(filename: str):
-    log_dir = "logs"
-    fpath = os.path.join(log_dir, os.path.basename(filename))
-    if not os.path.exists(fpath):
-        raise HTTPException(status_code=404, detail="CSV Log File not found")
-    return FileResponse(fpath, media_type="text/csv", filename=filename)
-
-@app.api_route("/api/logs/csv/delete/{filename}", methods=["GET", "DELETE"])
-async def delete_csv_log(filename: str):
-    log_dir = "logs"
-    fpath = os.path.join(log_dir, os.path.basename(filename))
-    if os.path.exists(fpath):
-        try:
-            os.remove(fpath)
-            return {"status": "SUCCESS", "message": f"Deleted CSV log file '{filename}'"}
-        except Exception as e:
-            return JSONResponse({"status": "ERROR", "message": str(e)}, status_code=500)
-    raise HTTPException(status_code=404, detail="CSV Log File not found")
-
-@app.post("/api/tools/phishing-eml")
-async def analyze_phishing_eml_api(file: UploadFile = File(...)):
-    if not file.filename.endswith(".eml") and not file.filename.endswith(".msg"):
-        raise HTTPException(status_code=400, detail="Invalid file type. Please upload a valid .eml file.")
-
-    content = await file.read()
-    from backend.engine.phishing_analyzer import parse_and_analyze_eml
-    return parse_and_analyze_eml(content, filename=file.filename)
-
-class AIChatMessage(BaseModel):
-    role: str = "user"
-    content: str = ""
-
-class AIChatRequest(BaseModel):
-    messages: List[AIChatMessage] = []
-    include_siem_context: bool = True
-
-@app.post("/api/ai/chat")
-async def ai_chat_endpoint(req: AIChatRequest):
-    from backend.engine.ai_chat import generate_cybersecurity_chat_response
-    msgs = [{"role": m.role, "content": m.content} for m in req.messages]
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, generate_cybersecurity_chat_response, msgs, req.include_siem_context)
+def csv_list():
+    result = []
+    for path in sorted(config.LOG_DIR.glob("karma_audit_*.csv"), reverse=True)[:200]:
+        if path.is_symlink():
+            continue
+        from datetime import datetime, timezone
+        result.append({"filename": path.name, "size_bytes": path.stat().st_size,
+                       "created_time": datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat(), "row_count": None})
     return result
 
+
+@app.get("/api/logs/csv/view/{filename}")
+def csv_view(filename: str):
+    with csv_path(filename).open(encoding="utf-8", newline="") as file:
+        import itertools
+        rows = list(itertools.islice(csv.DictReader(file), 1001))
+    return {"filename": filename, "total_rows": min(len(rows), 1000), "rows": rows[:1000], "truncated": len(rows) > 1000}
+
+
+@app.get("/api/logs/csv/download/{filename}")
+def csv_download(filename: str):
+    return FileResponse(csv_path(filename), media_type="text/csv", filename=filename)
+
+
+@app.delete("/api/logs/csv/delete/{filename}")
+def csv_delete(filename: str):
+    path = csv_path(filename)
+    if audit_csv_logger.is_active and path.resolve() == Path(audit_csv_logger.file_path).resolve():
+        raise HTTPException(409, "Cannot delete the active audit file")
+    path.unlink()
+    return {"status": "SUCCESS"}
+
+
+async def run_ai(function, *args):
+    if ai_slots.locked():
+        raise HTTPException(429, "AI workers busy; retry later")
+    async with ai_slots:
+        return await run_in_threadpool(function, *args)
+
+
+@app.post("/api/tools/phishing-eml")
+async def phishing(file: UploadFile = File(...)):
+    try:
+        if not file.filename or not file.filename.lower().endswith(".eml"):
+            raise HTTPException(400, "Only RFC822 .eml files are supported")
+        content = await file.read(config.MAX_BODY_BYTES + 1)
+        if not content or len(content) > config.MAX_BODY_BYTES:
+            raise HTTPException(400, "Email is empty or too large")
+        from backend.engine.phishing_analyzer import parse_and_analyze_eml
+        return await run_ai(parse_and_analyze_eml, content, file.filename)
+    finally:
+        await file.close()
+
+
+class AIChatMessage(BaseModel):
+    role: Literal["user", "assistant"] = "user"
+    content: str = Field(min_length=1, max_length=8000)
+
+
+class AIChatRequest(BaseModel):
+    messages: list[AIChatMessage] = Field(min_length=1, max_length=12)
+    include_siem_context: bool = False
+
+
+@app.post("/api/ai/chat")
+async def chat(req: AIChatRequest):
+    from backend.engine.ai_chat import generate_cybersecurity_chat_response
+    return await run_ai(generate_cybersecurity_chat_response, [m.model_dump() for m in req.messages], req.include_siem_context)
+
+
 @app.get("/api/ai/status")
-async def ai_status_endpoint():
-    from backend.config import DEEPSEEK_MODEL
-    return {
-        "status": "online",
-        "agent": "KARMA AI Cybersecurity SOC Copilot",
-        "model": DEEPSEEK_MODEL,
-        "engine": "DeepSeek Neural Threat Engine",
-        "siem_context_support": True
-    }
+def ai_status():
+    return {"status": "configured" if config.DEEPSEEK_API_KEY else "local_fallback", "model": config.DEEPSEEK_MODEL,
+            "siem_context_support": True, "external_provider": "DeepSeek"}
 
-@app.on_event("startup")
-async def startup_event():
-    loop = asyncio.get_running_loop()
-    manager.set_loop(loop)
-    audit_csv_logger.start()
-    start_sensors(manager.sync_broadcast)
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    audit_csv_logger.stop()
+@app.post("/api/tester/launch")
+@app.post("/api/simulator/launch")
+def demo_disabled():
+    raise HTTPException(403, "Run demonstration tools locally from the desktop launcher")
+
+
+@app.websocket("/ws/telemetry")
+async def telemetry(ws: WebSocket):
+    queue = await manager.connect(ws)
+    if queue is None:
+        return
+    import anyio
+    try:
+        async with anyio.create_task_group() as group:
+            async def sender():
+                try:
+                    while True:
+                        event = await queue.get()
+                        await asyncio.wait_for(ws.send_json(event), timeout=5)
+                except (WebSocketDisconnect, RuntimeError, asyncio.TimeoutError):
+                    pass
+                finally:
+                    group.cancel_scope.cancel()
+            group.start_soon(sender)
+            try:
+                while True:
+                    await ws.receive_text()
+            except (WebSocketDisconnect, RuntimeError):
+                pass
+            finally:
+                group.cancel_scope.cancel()
+    finally:
+        manager.connections.pop(ws, None)

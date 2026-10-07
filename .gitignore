@@ -26,3 +26,12 @@ logs/*.csv
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Runtime secrets and SQLite journals
+.env
+.env.*
+!.env.example
+data/
+*-wal
+*-shm
+backend/sensors/ssh_host_rsa_key

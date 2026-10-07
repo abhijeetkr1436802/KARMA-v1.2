@@ -52,7 +52,7 @@ DECOYS: Dict[str, Dict[str, Any]] = {
         "id": "api_auth_keys",
         "name": "Decoy API Credentials Trap",
         "type": "API Endpoint",
-        "port": 8000,
+        "port": PORT_WEB_HONEYPOT,
         "enabled": True,
         "description": "Fake REST endpoint `/api/v1/auth/keys` trapping unauthorized API key theft"
     },
@@ -60,49 +60,79 @@ DECOYS: Dict[str, Dict[str, Any]] = {
         "id": "api_db_export",
         "name": "Decoy Database Export Trap",
         "type": "API Endpoint",
-        "port": 8000,
+        "port": PORT_WEB_HONEYPOT,
         "enabled": True,
         "description": "Fake endpoint `/api/v1/admin/db_export` capturing data exfiltration attempts"
     }
 }
 
+import threading
+import json
+from backend.database import get_db
+from backend.config import PORT_API
+
+_lock = threading.RLock()
+_initialized = False
+
+
+def initialize_decoys():
+    global _initialized
+    with _lock:
+        conn = get_db()
+        try:
+            for row in conn.execute("SELECT config FROM decoy_config"):
+                decoy = json.loads(row[0])
+                DECOYS[decoy["id"]] = decoy
+            _initialized = True
+        finally:
+            conn.close()
+
+
+def _save(decoy):
+    if not _initialized:
+        return
+    conn = get_db()
+    try:
+        conn.execute("INSERT OR REPLACE INTO decoy_config VALUES (?, ?)", (decoy["id"], json.dumps(decoy)))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def get_all_decoys():
-    return list(DECOYS.values())
+    with _lock:
+        return [dict(d) for d in DECOYS.values()]
 
-def is_decoy_enabled(decoy_id: str) -> bool:
-    if decoy_id in DECOYS:
-        return DECOYS[decoy_id].get("enabled", True)
-    return True
 
-def is_port_enabled(port: int) -> bool:
-    for decoy in DECOYS.values():
-        if decoy.get("port") == port:
-            return decoy.get("enabled", True)
-    return True
+def is_decoy_enabled(decoy_id):
+    with _lock:
+        return bool(DECOYS.get(decoy_id, {}).get("enabled", False))
 
-def toggle_decoy(decoy_id: str, enabled: bool = None) -> Dict[str, Any]:
-    if decoy_id not in DECOYS:
-        return {"status": "ERROR", "message": f"Decoy '{decoy_id}' not found"}
-    
-    if enabled is None:
-        DECOYS[decoy_id]["enabled"] = not DECOYS[decoy_id]["enabled"]
-    else:
-        DECOYS[decoy_id]["enabled"] = bool(enabled)
 
-    return {
-        "status": "SUCCESS",
-        "decoy": DECOYS[decoy_id],
-        "message": f"Decoy '{DECOYS[decoy_id]['name']}' is now {'ENABLED' if DECOYS[decoy_id]['enabled'] else 'DISABLED'}"
-    }
+def is_port_enabled(port):
+    with _lock:
+        return any(d["port"] == port and d["enabled"] for d in DECOYS.values())
 
-def add_custom_decoy(name: str, port: int, service_type: str, description: str = ""):
-    decoy_id = f"custom_port_{port}"
-    DECOYS[decoy_id] = {
-        "id": decoy_id,
-        "name": name,
-        "type": service_type or "Custom Decoy Port",
-        "port": port,
-        "enabled": True,
-        "description": description or f"Custom decoy listener on port {port}"
-    }
-    return DECOYS[decoy_id]
+
+def toggle_decoy(decoy_id, enabled=None):
+    with _lock:
+        if decoy_id not in DECOYS:
+            raise ValueError("Decoy not found")
+        d = dict(DECOYS[decoy_id])
+        d["enabled"] = not d["enabled"] if enabled is None else enabled
+        _save(d)
+        DECOYS[decoy_id] = d
+        return {"status": "SUCCESS", "decoy": dict(d)}
+
+
+def add_custom_decoy(name, port, service_type, description=""):
+    with _lock:
+        if not 1 <= port <= 65535 or port == PORT_API or any(d["port"] == port for d in DECOYS.values()):
+            raise ValueError("Port must be available, unique, and between 1 and 65535")
+        if len(DECOYS) >= 32:
+            raise ValueError("Maximum of 32 decoys reached")
+        d = {"id": f"custom_port_{port}", "name": name, "port": port,
+             "type": service_type, "description": description, "enabled": True}
+        _save(d)
+        DECOYS[d["id"]] = d
+        return dict(d)

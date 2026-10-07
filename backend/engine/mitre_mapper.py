@@ -35,8 +35,8 @@ MITRE_MAPPING_RULES = [
         "mitre_id": "T1059",
         "mitre_name": "Command and Scripting Interpreter",
         "mitre_tactic": "Execution",
-        "keywords": ["whoami", "id", "uname", "wget", "curl", "chmod", "cat /etc", "nc -e", "bash -i"],
-        "service": ["SSH_HONEYPOT"],
+        "keywords": ["whoami", "id", "uname", "wget", "curl", "chmod", "cat /etc", "nc -e", "bash -i", "command_execution"],
+        "service": ["SSH_HONEYPOT", "RAW_DECOY"],
         "base_risk": 90,
         "severity": "CRITICAL"
     },
@@ -45,7 +45,7 @@ MITRE_MAPPING_RULES = [
         "mitre_name": "Network Service Discovery",
         "mitre_tactic": "Discovery",
         "keywords": ["port_scan", "connect_probe", "syn_scan"],
-        "service": ["RAW_DECOY", "PORT_SCANNER"],
+        "service": ["RAW_DECOY", "PORT_SCANNER", "SSH_HONEYPOT"],
         "base_risk": 45,
         "severity": "MEDIUM"
     },
@@ -70,7 +70,8 @@ def map_payload_to_mitre(decoy_service, attack_type, payload=""):
         if decoy_service in rule["service"] or "ALL" in rule["service"]:
             # Check keyword match
             for kw in rule["keywords"]:
-                if kw.lower() in combined_text:
+                import re
+                if re.search(r"(?<!\w)" + re.escape(kw.lower()) + r"(?!\w)", combined_text):
                     return {
                         "mitre_id": rule["mitre_id"],
                         "mitre_name": rule["mitre_name"],

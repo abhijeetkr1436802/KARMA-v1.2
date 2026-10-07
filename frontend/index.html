@@ -24,7 +24,7 @@
 
     <!-- Leaflet JS & Chart.js -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
 </head>
 
 <body>
@@ -55,9 +55,9 @@
             <div class="filter-dropdown">
                 <span class="icon">📅</span>
                 <select id="timeFilterSelect">
-                    <option value="24h">Last 24 hours</option>
-                    <option value="12h">Last 12 hours</option>
-                    <option value="realtime">Real-time Stream</option>
+                    <option value="50">Latest 50 events</option>
+                    <option value="200">Latest 200 events</option>
+                    <option value="1000">Latest 1,000 events</option>
                 </select>
             </div>
 
@@ -102,10 +102,7 @@
                     <span class="nav-icon">🔑</span>
                     <span class="nav-text">Honeytoken Vault</span>
                 </a>
-                <a href="/real-admin" target="_blank" class="nav-item">
-                    <span class="nav-icon">🔒</span>
-                    <span class="nav-text">Real Production Admin</span>
-                </a>
+                <button class="nav-item" onclick="fetch('/api/logout', {method:'POST'}).then(() => location.assign('/login'))">Sign out</button>
 
                 <div class="nav-section-title">CYBER TOOLKIT</div>
                 <a href="#tool-password" class="nav-item" data-tab="tool-password">
@@ -174,9 +171,9 @@
                         <div class="kpi-sub">Count</div>
                     </div>
                     <div class="kpi-card text-danger-card">
-                        <div class="kpi-title">Quarantined Adversaries</div>
+                        <div class="kpi-title">Sensor Blocked IPs</div>
                         <div class="kpi-value" id="statQuarantined">0</div>
-                        <div class="kpi-sub">Isolated</div>
+                        <div class="kpi-sub">Blocked on KARMA sensors</div>
                     </div>
                 </section>
 
@@ -266,7 +263,7 @@
                                         <th>Payload Snippet</th>
                                         <th>MITRE TTP</th>
                                         <th>Severity</th>
-                                        <th>AI Forensic Report</th>
+                                        <th>Rule-based Report</th>
                                     </tr>
                                 </thead>
                                 <tbody id="telemetryTableBody">
@@ -453,11 +450,11 @@
                                     Valid Accounts / Honeytoken Trap</h4>
                                 <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; line-height: 1.5;">
                                     Unauthenticated access attempts or credential testing on decoy honeytoken endpoints
-                                    (e.g. <code>/real-admin</code>, <code>/api/v1/auth/keys</code>). Triggers
-                                    <strong>Instant IP Quarantine</strong>.</p>
+                                    (e.g. <code>/secret-vault-admin-login-php</code>, <code>/api/v1/auth/keys</code>). Triggers
+                                    <strong>Blocking on KARMA sensors</strong>.</p>
                                 <div
                                     style="font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; border-top: 1px dashed var(--border-color); padding-top: 8px;">
-                                    Sensors: <code>Honeytoken Trap Engine (8000)</code>
+                                    Sensors: <code>Honeytoken Trap Engine (8080)</code>
                                 </div>
                             </div>
 
@@ -733,9 +730,7 @@
                                     Upload .EML Email File for Inspection:</h4>
                                 <p
                                     style="font-size: 12px; color: var(--text-secondary); margin-bottom: 18px; line-height: 1.6;">
-                                    Upload raw <code>.eml</code> or <code>.msg</code> email files. DeepSeek AI parses
-                                    RFC822 MIME headers, evaluates Return-Path domain alignment, checks SPF/DKIM
-                                    verification, and inspects embedded links.
+                                    Upload RFC822 <code>.eml</code> files. When DeepSeek is configured, headers and up to 2,500 characters of email text are sent to that provider. Otherwise local heuristics are used. SPF/DKIM headers are inspected, not independently verified.
                                 </p>
 
                                 <div id="emlDropZone" class="clay-card-sm"
@@ -788,7 +783,7 @@
                             <div class="ai-header-icon">🤖</div>
                             <div class="ai-header-titles">
                                 <h3>KARMA AI SOC Copilot <span class="ai-status-pill"><span
-                                            class="ai-status-dot"></span> DeepSeek Neural Engine Online</span></h3>
+                                            class="ai-status-dot"></span> AI configuration checked on request</span></h3>
                                 <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Autonomous
                                     Cybersecurity Assistant • Threat Forensics & SOC Operations</div>
                             </div>
@@ -796,8 +791,8 @@
                         <div class="ai-header-actions">
                             <label class="ai-context-toggle-label"
                                 title="Inject real-time SIEM honeypot logs and active threat score context into AI prompt">
-                                <input type="checkbox" id="aiSiemContextToggle" checked>
-                                <span>⚡ Live SIEM Context</span>
+                                <input type="checkbox" id="aiSiemContextToggle">
+                                <span>⚡ Send SIEM context to DeepSeek</span>
                             </label>
                             <button class="btn btn-secondary" id="aiExportChatBtn"
                                 style="font-size: 11px; padding: 6px 10px;" title="Export markdown chat transcript">📥
@@ -1031,7 +1026,7 @@
     <div class="modal-overlay" id="aiReportModal">
         <div class="modal-card">
             <div class="modal-card-header">
-                <h3>AI Threat Synthesizer Forensic Report</h3>
+                <h3>Rule-based Forensic Report</h3>
                 <span class="modal-close-btn" id="btnCloseModal">&times;</span>
             </div>
             <div class="modal-card-body" id="modalReportContent">
@@ -1082,7 +1077,7 @@
             <!-- Rendered by ai_chat.js -->
         </div>
         <div class="ai-widget-footer">
-            <input type="text" class="ai-widget-input" id="aiWidgetInput"
+            <input type="text" class="ai-widget-input" id="aiWidgetInput" maxlength="8000"
                 placeholder="Ask KARMA AI cybersecurity assistant...">
             <button class="ai-widget-send" id="aiWidgetSendBtn" title="Send message">➤</button>
         </div>
@@ -1095,6 +1090,7 @@
     <script src="/static/js/tools.js?v=2.1"></script>
     <script src="/static/js/ai_chat.js?v=2.1"></script>
     <script src="/static/js/app.js?v=2.1"></script>
+<script>document.querySelectorAll("input[type=file]").forEach(input => input.accept = ".eml");</script>
 </body>
 
 </html>

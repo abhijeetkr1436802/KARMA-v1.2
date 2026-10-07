@@ -3,18 +3,34 @@ K.A.R.M.A Web Application Honeypot Sensor (Port 8080)
 Simulates vulnerability web services, traps SQL Injection, XSS, and Path Traversal probes.
 """
 
+from backend.database import mark_event_quarantine
+
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 import uvicorn
 import threading
 import time
-from backend.config import PORT_WEB_HONEYPOT
+from backend.config import PORT_WEB_HONEYPOT, SENSOR_HOST
+from backend.security import RequestGuard
+from backend.database import is_quarantined, get_attempt_count
+import socket
 from backend.engine.mitre_mapper import map_payload_to_mitre
 from backend.engine.threat_score import calculate_event_risk
 from backend.database import log_attack_event, record_honeytoken_hit
 from backend.engine.active_defense import active_defense_engine
 
-web_decoy_app = FastAPI(title="Corporate Admin Portal Decoy")
+web_decoy_app = FastAPI(title="Corporate Admin Portal Decoy", docs_url=None, redoc_url=None, openapi_url=None)
+
+@web_decoy_app.middleware("http")
+async def enforce_sensor_access(request, call_next):
+    from backend.decoy_state import is_decoy_enabled
+    if not is_decoy_enabled("web_8080"):
+        return JSONResponse({"detail": "Sensor disabled"}, status_code=503)
+    if request.client and is_quarantined(request.client.host):
+        return JSONResponse({"detail": "Blocked on KARMA sensors"}, status_code=403)
+    return await call_next(request)
+
+web_decoy_app.add_middleware(RequestGuard, management=False)
 broadcast_cb = None
 
 def set_web_broadcast_callback(cb):
@@ -183,9 +199,12 @@ def process_web_attack(client_ip, path, method, payload):
         return
 
     # Check for Honeytoken URL hit
-    is_honeytoken = "secret-vault-admin" in path or "AKIAIOSF" in payload
+    is_honeytoken = "secret-vault-admin" in path or "AKIAIOSF" in payload or path.startswith("/api/v1/") or "Honeytoken" in payload
     if is_honeytoken:
-        record_honeytoken_hit("ht-admin-url", client_ip)
+        if "secret-vault-admin" in path:
+            record_honeytoken_hit("ht-admin-url", client_ip)
+        elif path.endswith("/keys") or "AKIAIOSF" in payload:
+            record_honeytoken_hit("ht-aws-01", client_ip)
         attack_type = "Honeytoken Compromise"
         service = "HONEYTOKEN"
     else:
@@ -193,7 +212,7 @@ def process_web_attack(client_ip, path, method, payload):
         service = "WEB_HONEYPOT"
 
     mitre = map_payload_to_mitre(service, attack_type, payload or path)
-    score, severity = calculate_event_risk(mitre['risk_score'])
+    score, severity = calculate_event_risk(mitre['risk_score'], get_attempt_count(client_ip) + 1)
 
     log_id = log_attack_event(
         attacker_ip=client_ip,
@@ -212,6 +231,7 @@ def process_web_attack(client_ip, path, method, payload):
     geo = get_geo_info(client_ip)
 
     quarantined, _ = active_defense_engine.process_event(client_ip, score, mitre['mitre_name'])
+    mark_event_quarantine(log_id, quarantined)
 
     if broadcast_cb:
         broadcast_cb({
@@ -236,58 +256,85 @@ def process_web_attack(client_ip, path, method, payload):
         })
 
 @web_decoy_app.get("/", response_class=HTMLResponse)
-async def get_login(request: Request):
+def get_login(request: Request):
     client_ip = request.client.host if request.client else "127.0.0.1"
     process_web_attack(client_ip, request.url.path, "GET", str(request.query_params))
     return HTML_TEMPLATE
 
 @web_decoy_app.get("/secret-vault-admin-login-php", response_class=HTMLResponse)
-async def get_honeytoken(request: Request):
+def get_honeytoken(request: Request):
     client_ip = request.client.host if request.client else "127.0.0.1"
     process_web_attack(client_ip, request.url.path, "GET", "Honeytoken URL Triggered")
     return "<h1 style='color:red; font-family:sans-serif; text-align:center;'>403 Access Denied - Security Alert Triggered</h1>"
 
 @web_decoy_app.post("/login")
-async def post_login(request: Request, username: str = Form(...), password: str = Form(...)):
+def post_login(request: Request, username: str = Form(...), password: str = Form(...)):
     client_ip = request.client.host if request.client else "127.0.0.1"
-    payload = f"user={username} & pass={password}"
+    payload = f"user={username[:2048]} & pass=[redacted]"
     process_web_attack(client_ip, "/login", "POST", payload)
     return HTMLResponse(content="<script>alert('Invalid Authentication Credentials'); window.location.href='/';</script>")
 
+@web_decoy_app.get("/api/v1/auth/keys")
+@web_decoy_app.get("/api/v1/admin/db_export")
+def api_trap(request: Request):
+    from backend.decoy_state import is_decoy_enabled
+    key = "api_auth_keys" if request.url.path.endswith("keys") else "api_db_export"
+    if not is_decoy_enabled(key):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+    process_web_attack(request.client.host, request.url.path, "GET", "Honeytoken URL Triggered")
+    return JSONResponse({"detail": "Access denied"}, status_code=403)
+
 @web_decoy_app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-async def catch_all(request: Request, full_path: str):
+def catch_all(request: Request, full_path: str):
     client_ip = request.client.host if request.client else "127.0.0.1"
+    from backend.database import get_honeytokens
+    for token in get_honeytokens():
+        if token["type"] == "Decoy URL" and token["token_value"] == "/" + full_path:
+            record_honeytoken_hit(token["token_id"], client_ip)
+            process_web_attack(client_ip, "/" + full_path, request.method, "Honeytoken URL Triggered")
+            return HTMLResponse("Access denied", status_code=403)
     process_web_attack(client_ip, f"/{full_path}", request.method, str(request.query_params))
     return HTMLResponse(content="<h1>404 Not Found</h1>", status_code=404)
 
-# Global reference for stopping
-_web_honeypot_instance = None
-
 class WebHoneypotServer:
-    def __init__(self, host="0.0.0.0", port=PORT_WEB_HONEYPOT):
-        global _web_honeypot_instance
-        self.host = host
-        self.port = port
+    def __init__(self, host=SENSOR_HOST, port=PORT_WEB_HONEYPOT):
+        self.host, self.port = host, port
         self.server = None
-        _web_honeypot_instance = self
+        self.thread = None
+        self.socket = None
+
+    @property
+    def running(self):
+        return bool(self.server and self.server.started and self.thread and self.thread.is_alive())
 
     def start(self):
-        from backend.decoy_state import is_decoy_enabled
-        if not is_decoy_enabled("web_8080"):
-            print(f"[Web Decoy Sensor] Web Admin Decoy (Port {self.port}) is DISABLED in launcher config. Skipping socket bind.")
-            return
-
-        config = uvicorn.Config(web_decoy_app, host=self.host, port=self.port, log_level="error")
-        self.server = uvicorn.Server(config)
-        thread = threading.Thread(target=self.server.run, daemon=True)
-        thread.start()
-        print(f"[Web Decoy Sensor] Listening on port {self.port}...")
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            self.socket.bind((self.host, self.port))
+            self.socket.listen(32)
+            config = uvicorn.Config(web_decoy_app, host=self.host, port=self.port,
+                                    log_level="warning", proxy_headers=False,
+                                    limit_concurrency=64, timeout_keep_alive=5, timeout_graceful_shutdown=5)
+            self.server = uvicorn.Server(config)
+            self.thread = threading.Thread(target=self.server.run, kwargs={"sockets": [self.socket]}, daemon=True)
+            self.thread.start()
+            deadline = time.monotonic() + 5
+            while not self.server.started and self.thread.is_alive() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            if not self.running:
+                raise RuntimeError("Web listener failed to start")
+        except BaseException:
+            self.stop()
+            raise
 
     def stop(self):
         if self.server:
             self.server.should_exit = True
-
-def stop_web_sensor():
-    global _web_honeypot_instance
-    if _web_honeypot_instance:
-        _web_honeypot_instance.stop()
+        if self.thread:
+            self.thread.join(timeout=7)
+        if self.socket:
+            self.socket.close()

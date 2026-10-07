@@ -1,126 +1,73 @@
-# K.A.R.M.A Cloud SIEM — Autonomous AI Threat Deception Platform & Security Incident Event Management
+# K.A.R.M.A SIEM
 
-![K.A.R.M.A Cloud SIEM Banner](frontend/Project_Assets/karma_logo.png)
+A single-host honeypot monitoring application with an authenticated management dashboard, SQLite storage, CSV audit segments, SSH/Web/TCP decoys, rule-based MITRE classification, and optional DeepSeek chat/email analysis.
 
-> **K.A.R.M.A**: **K**anaka, **A**bhijeet, **R**aghunandan — **M**onitoring Engine & **A**ctive Cyber Deception Architecture.
-> 
-> *"In Cybersecurity, KARMA signifies that an adversary's attack probes return directly to trap, profile, and isolate them automatically."*
+Developed by Abhijeet Kumar, Kanaka C, Raghunandan T V, and Sanjay Kashyap at The Oxford Evening Polytechnic, guided by Subhash J R.
 
----
+## Run locally
 
-## 🏛️ Academic Project Information
+Tested with Python 3.14 on Windows. Install the locked runtime dependencies in an isolated environment:
 
-- **Institution**: The Oxford Evening Polytechnic, Bangalore, Karnataka
-- **Department**: Department of Computer Science & Engineering
-- **Program**: Diploma in Computer Science & Engineering (Cyber Security Major Project)
-- **Course Code**: Semester VI Major Project (20CS61P)
-- **Academic Year**: 2025 – 2026
-- **Project Guide & Mentor**: **Mr. Subhash J R** (Lecturer, Dept of Computer Science & Engineering)
-
-### 👥 Student Development Team
-1. **Abhijeet Kumar** — *Team Lead & Core System Architect*
-2. **Kanaka C** — *Security Analyst & Frontend UI/UX Engineer*
-3. **Raghunandan T V** — *Backend Engineer & Threat Intelligence Specialist*
-4. **Sanjay Kashyap** — *Security QA & Penetration Testing Specialist*
-
----
-
-## ⚡ Executive Summary
-
-**K.A.R.M.A Cloud SIEM** is an enterprise-grade Autonomous Cyber Threat Deception & Incident Response Platform designed to trap, analyze, and neutralize cyber adversaries in real time. Combining active protocol honeypots, honeytoken secret traps, automated MITRE ATT&CK TTP classification, and DeepSeek AI threat intelligence, K.A.R.M.A provides full SOC visibility across enterprise subnets.
-
----
-
-## 🚀 Key Architecture & Platform Features
-
-### 1. 🛡️ Active Multi-Protocol Honeypot Sensors
-- **OpenSSH Protocol Honeypot (`Port 2222`)**: Built on Paramiko with persistent RSA host keys (`ssh_host_rsa_key`). Traps authentication brute-force attempts and records interactive bash shell commands (`whoami`, `id`, `cat /etc/passwd`), mapping them to **MITRE T1059**.
-- **Web Admin Vulnerability Honeypot (`Port 8080`)**: Simulates vulnerable web applications, capturing SQL Injection (`UNION SELECT`), Cross-Site Scripting (XSS), and Path Traversal (`../../etc/passwd`).
-- **Multi-Port Decoy Sensors (`Ports 21 FTP, 23 Telnet, 3389 RDP`)**: Detects early network service discovery probes (Nmap, Masscan), mapping them to **MITRE T1046**.
-
-### 2. 🔑 Production Honeytoken Vault (`Port 8000`)
-- Deploys decoy AWS access keys (`AKIA...`), database recovery URLs (`/secret-vault-admin-login-php`), and staging credentials.
-- Triggers instant critical severity alerts when accessed by attackers.
-
-### 3. 🌐 Real-Time Cloud SIEM Monitoring Console
-- **Attacker Origin Geolocation World Map**: Live Leaflet.js world map rendering attacker IP locations, country flags, and threat score markers.
-- **WebSockets Telemetry Dispatcher**: Low-latency event streaming directly to the browser UI.
-- **Zoomable Threat Velocity Line Chart**: Features `➕`, `➖`, and `🔄 Fit` zoom controls with automatic X-axis label compression.
-- **Uncapped Threat Counter**: Continuously tracks real-time attack counts across all ports.
-- **CSV Session Audit Archiver**: Automatically logs session events to `logs/karma_audit_YYYY-MM-DD_HH-MM-SS.csv` with one-click preview and download capabilities.
-
-### 4. 🧠 DeepSeek AI Threat Intelligence & KARMA AI SOC Copilot
-- **KARMA AI SOC Copilot**: Full conversational Cybersecurity AI Agent powered by **DeepSeek AI Neural Engine** (`deepseek-chat`).
-  - **Dual Access Modes**: Full-screen conversational view (OpenAI/Gemini style) with prompt suggestions, live SIEM context injection, copyable code blocks, and markdown transcript export; plus a persistent **Gmail-composer style Floating Action Button (FAB) widget** accessible across all dashboard tabs.
-  - **Live SIEM Telemetry Awareness**: Real-time context ingestion summarizing active decoy status, quarantined IPs, and top attacker telemetry.
-  - **Incident Response & Playbook Generation**: Automatically constructs defensive containment rules (IPTables, Fail2ban, Suricata, Snort, YARA) and MITRE ATT&CK mitigation playbooks.
-- **MITRE ATT&CK TTP Classifier**: Automatic taxonomy mapping (`T1046 Network Discovery`, `T1110 Brute Force`, `T1059 Command Interpreter`, `T1190 Exploit Public App`, `T1078 Valid Accounts`).
-
-### 5. 🧰 Built-in Cyber Toolkit
-- **Password Security & Market Hasher**: Zero-storage client privacy notice, entropy calculation, GPU offline crack time estimation, and market hashes (**SHA-256**, **SHA-512**, **MD5**).
-- **AI Phishing .EML Analyzer**: Drag-and-drop RFC822 MIME email parser, Return-Path domain alignment check, SPF/DKIM verification, and DeepSeek AI threat detection.
-
----
-
-## 🛠️ Installation & Quickstart Guide
-
-### Option 1: Running from Source Code (Python 3.10+)
-
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/abhikr1436/KARMA-HoneyPot.git
-   cd KARMA-HoneyPot
-   ```
-
-2. **Install Required Python Packages**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Launch the K.A.R.M.A Control Panel**:
-   ```bash
-   python run.py
-   ```
-   - **SIEM Web SOC Dashboard**: `http://localhost:8000`
-   - **Web Honeypot Trap**: `http://localhost:8080`
-   - **SSH Honeypot Trap**: `ssh root@<TARGET_IP> -p 2222`
-
----
-
-### Option 2: Standalone Executable Package (`setup.py`)
-
-No Python, Git, or pip installation required!
-
-1. Compile the standalone package:
-   ```bash
-   python setup.py
-   ```
-2. Navigate to `dist/KARMA_Cloud_SIEM/` or extract `dist/KARMA_Cloud_SIEM_Standalone_v1.0.zip`.
-3. Double-click **`KARMA_Cloud_SIEM.exe`** to run on any Windows PC!
-
----
-
-## 🧪 Demonstration & Testing Guide
-
-### 1. Test SSH Honeypot
-Run from any terminal:
-```bash
-ssh root@127.0.0.1 -p 2222
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python -m pip install --upgrade pip
+.\.venv\Scripts\python -m pip install -r requirements.txt
+.\.venv\Scripts\python run.py
 ```
-Enter any password (e.g. `admin123`), execute commands (`whoami`, `id`, `cat /etc/passwd`), and view the captured commands live on the K.A.R.M.A Dashboard!
 
-### 2. Test Honeytoken Vault Trap
-Navigate to:
+For a terminal server without Tkinter:
+
+```powershell
+.\.venv\Scripts\python run.py --headless
 ```
-http://localhost:8000/secret-vault-admin-login-php
+
+Visit `http://localhost:8000`. On first startup a random admin token is saved to `%USERPROFILE%/.karma/admin-token`. Read that file locally and enter the token on the login page. Do not paste the token into chat or source control. Set `KARMA_ADMIN_TOKEN` to supply your own 32+ character random secret.
+
+The management console is loopback-only in development, including API and WebSocket access. Browser sessions expire after eight hours. API clients use `Authorization: Bearer <token>`. Cookie-authenticated mutations require `X-Karma-Request: 1`; the dashboard supplies it automatically. Changing the token and restarting invalidates existing sessions.
+
+## Network surfaces
+
+| Port | Purpose |
+| --- | --- |
+| 8000 | Authenticated dashboard/API; localhost by default |
+| 8080 | Public web decoy and honeytoken URL/API traps |
+| 2222 | SSH simulation; commands are never executed by the OS |
+| 21, 23, 3389 | FTP/Telnet/RDP decoys |
+
+The previous public traps on port 8000 have moved to 8080. The misleading demo “production vault” login has been removed. Try `/secret-vault-admin-login-php` or `/api/v1/auth/keys` on the web sensor. Only enable sensors in networks you administer. Port conflicts are reported as ERROR in the dashboard rather than ACTIVE. Custom decoys create TCP listeners; toggles change actual listener state. API trap toggles depend on the web sensor being enabled.
+
+Quarantine blocks new connections and subsequent interactions on KARMA sensors. It does **not** install OS firewall rules or isolate machines from other services. A triggering SSH login may now be rejected and later connections blocked; unblock the testing IP in the dashboard before repeating a demonstration. Desktop testing remains available from the launcher; the web API cannot launch desktop windows or attack simulations.
+
+## Production deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for TLS, service operation, backups, retention, upgrades, and operational limits. This repository includes hardening and regression tests; production readiness still requires validation on your actual host and traffic profile.
+
+## Truthful analysis and privacy
+
+- Event/attacker reports and MITRE mappings are deterministic heuristics, not external AI verdicts.
+- IP locations remain unknown without a geolocation provider; private IPs are not assigned invented cities.
+- Without `DEEPSEEK_API_KEY`, chat/email analysis falls back locally. The email heuristic does not certify a message as legitimate.
+- Configured email analysis sends headers and up to 2,500 characters of body text to DeepSeek. Chat sends the selected conversation history. Sending live SIEM context is opt-in in the dashboard.
+- Email `Authentication-Results` headers are untrusted input. SPF/DKIM is not independently verified. Outlook binary `.msg` is unsupported; export RFC822 `.eml` instead.
+- Captured SSH/web login passwords are redacted; arbitrary attack payloads can still contain sensitive data. Restrict access to the data directory and backups.
+- Generated API keys/credential honeytokens are decoy strings, not provider-managed keys. They do not detect use outside KARMA. Custom URL tokens are routed by the web sensor.
+
+## Checks
+
+```powershell
+.\.venv\Scripts\python -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python -B -m unittest discover -s tests -v
+node tests/frontend.test.cjs
+.\.venv\Scripts\python -m pip check
+.\.venv\Scripts\python -m pip_audit --local
 ```
-Watch an instant critical alert trigger on the real-time telemetry log table.
 
-### 3. Test AI Phishing .EML Analyzer
-Open **`AI Phishing .EML Analyzer`** under the `CYBER TOOLKIT` tab in the web dashboard and click `🧪 Sample .EML` to view a live DeepSeek AI forensic report!
+Tests use temporary databases and loopback ephemeral ports. They do not contact DeepSeek, change firewall rules, or alter existing telemetry. The Python lockfile records the tested dependency closure; `requirements.in` lists upgrade inputs. Refresh dependencies in a clean environment, rerun checks and audit, then update the lockfile. CI runs regression checks on Windows and Linux.
 
----
+## Packaging
 
-## 📜 License & Copyright
-Developed for **Semester VI Major Project (20CS61P)** at **The Oxford Evening Polytechnic**, Bangalore.
-© 2025–2026 Team K.A.R.M.A (Abhijeet Kumar, Kanaka C, Raghunandan T V, Sanjay Kashyap). All rights reserved.
+Install PyInstaller separately in your build environment, then run `python setup.py`. The backend is collected as Python modules; runtime data and per-installation SSH keys are stored outside the executable bundle. The executable build is an optional distribution path and must be smoke-tested on the target Windows version.
+
+## License
+
+All rights reserved, Team K.A.R.M.A, 2025–2026.

@@ -46,7 +46,7 @@ def build_standalone_app():
         "--onedir",
         # Bundle data directories (frontend assets & backend package)
         f"--add-data=frontend{os.pathsep}frontend",
-        f"--add-data=backend{os.pathsep}backend",
+        "--collect-submodules=backend",
         # Force-collect all submodules & data for third-party deps that PyInstaller
         # cannot statically trace (e.g. fastapi.middleware, uvicorn/lupa workers,
         # paramiko transport, websockets protocols, pydantic types)

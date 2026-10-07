@@ -1,3 +1,19 @@
+// Same-origin API requests carry a CSRF header; authentication stays in an HttpOnly cookie.
+const nativeFetch = window.fetch.bind(window);
+window.fetch = async function (input, options = {}) {
+    const url = new URL(typeof input === 'string' ? input : input.url, window.location.href);
+    if (url.origin !== window.location.origin) return nativeFetch(input, options);
+    const headers = new Headers(options.headers || {});
+    headers.set('X-Karma-Request', '1');
+    const response = await nativeFetch(input, { ...options, headers });
+    if (response.status === 401) window.location.assign('/login');
+    if (!response.ok) {
+        const data = await response.clone().json().catch(() => ({}));
+        throw new Error(typeof data.detail === 'string' ? data.detail : `Request failed (${response.status})`);
+    }
+    return response;
+};
+
 /*
  * Enterprise Cloud SIEM Main Application Logic
  * Integrates Leaflet Attacker Origin World Map, Light/Dark Theme Switcher,
@@ -12,9 +28,14 @@ let tileLayer1 = null;
 let tileLayer2 = null;
 
 document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById('timeFilterSelect')?.addEventListener('change', fetchDashboardData);
+    for (const id of ['btnLaunchTester', 'btnLaunchSim']) {
+        const button = document.getElementById(id);
+        if (button) { button.disabled = true; button.title = 'Use the local desktop testing tools'; }
+    }
     initTheme();
-    initSiemCharts();
-    initLeafletMap();
+    if (typeof Chart !== "undefined") initSiemCharts();
+    if (typeof L !== "undefined") initLeafletMap();
     fetchDashboardData();
     setupEventListeners();
     initWebSocketConnection();
@@ -118,8 +139,9 @@ function updateMapMarkers(attackers) {
     if (!attackers || attackers.length === 0) return;
 
     attackers.forEach(a => {
-        const lat = a.lat || 12.9716;
-        const lng = a.lng || 77.5946;
+        if (!Number.isFinite(a.lat) || !Number.isFinite(a.lng)) return;
+        const lat = a.lat;
+        const lng = a.lng;
         const flag = a.flag || "🌐";
         const country = a.country || "Unknown Origin";
         const score = a.max_risk_score || 50;
@@ -128,10 +150,10 @@ function updateMapMarkers(attackers) {
 
         const popupHTML = `
             <div style="font-family: sans-serif; padding: 4px;">
-                <h4 style="margin: 0 0 4px 0; font-size: 13px;">${flag} ${country}</h4>
+                <h4 style="margin: 0 0 4px 0; font-size: 13px;">${escapeHTML(flag)} ${escapeHTML(country)}</h4>
                 <p style="margin: 0; font-size: 11px; color: #64748b;"><b>IP:</b> <code style="color: #0070f3;">${a.ip}</code></p>
                 <p style="margin: 2px 0; font-size: 11px; color: #64748b;"><b>Attempts:</b> ${a.total_attempts} | <b>Risk Score:</b> <strong style="color:${circleColor}">${score}/100</strong></p>
-                <p style="margin: 4px 0 0 0;"><button onclick="inspectAIReport('${a.ip}')" style="background:#0070f3; color:#fff; border:none; padding:3px 8px; border-radius:4px; font-size:10px; cursor:pointer;">AI Report</button></p>
+                <p style="margin: 4px 0 0 0;"><button onclick="inspectAIReport('${a.ip}')" style="background:#0070f3; color:#fff; border:none; padding:3px 8px; border-radius:4px; font-size:10px; cursor:pointer;">Rule-based Report</button></p>
             </div>
         `;
 
@@ -163,12 +185,13 @@ function updateMapMarkers(attackers) {
     });
 }
 
+let dashboardRefreshTimer = null;
 function initWebSocketConnection() {
     new TelemetryWebSocket((event) => {
         prependTelemetryRow(event);
-        fetchDashboardData();
+        if (!dashboardRefreshTimer) dashboardRefreshTimer = setTimeout(() => { dashboardRefreshTimer = null; fetchDashboardData(); }, 1000);
     }, (connected) => {
-        // Connected
+        if (connected) fetchDashboardData();
     });
 }
 
@@ -176,7 +199,7 @@ async function fetchDashboardData() {
     try {
         const [statusRes, logsRes, attackersRes, mitreRes, honeytokensRes] = await Promise.all([
             fetch("/api/status"),
-            fetch("/api/logs?limit=50"),
+            fetch(`/api/logs?limit=${document.getElementById("timeFilterSelect")?.value || 50}`),
             fetch("/api/attackers"),
             fetch("/api/mitre"),
             fetch("/api/honeytokens")
@@ -190,8 +213,8 @@ async function fetchDashboardData() {
 
         // Update Stat Counters
         document.getElementById("statTotalAttacks").innerText = status.metrics.total_attacks_logged;
-        document.getElementById("statAuditEvents").innerText = Math.floor(status.metrics.total_attacks_logged * 0.4);
-        document.getElementById("statEndpointEvents").innerText = Math.floor(status.metrics.total_attacks_logged * 0.6);
+        document.getElementById("statAuditEvents").innerText = status.metrics.web_events;
+        document.getElementById("statEndpointEvents").innerText = status.metrics.network_events;
         document.getElementById("statQuarantined").innerText = status.metrics.quarantined_ips;
 
         // Render Tables & SIEM Charts
@@ -238,10 +261,10 @@ function renderDecoyList(decoys) {
     }
 
     container.innerHTML = decoys.map(d => {
-        const isEnabled = d.enabled;
+        const isEnabled = d.status === 'ACTIVE';
         const statusBadge = isEnabled
             ? `<span class="decoy-badge active" style="background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px;">🟢 ACTIVE & LISTENING</span>`
-            : `<span class="decoy-badge disabled" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px;">🔴 DISABLED AT LAUNCH</span>`;
+            : `<span class="decoy-badge disabled" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px;">${escapeHTML(d.status || "STOPPED")}</span>`;
 
         return `
             <div class="decoy-card">
@@ -254,10 +277,10 @@ function renderDecoyList(decoys) {
                     </div>
                     ${statusBadge}
                 </div>
-                <div class="decoy-desc" style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.4;">${escapeHTML(d.description || '')}</div>
+                <div class="decoy-desc" style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.4;">${escapeHTML(d.error || d.description || '')}</div>
                 <div class="decoy-card-footer" style="font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border-subtle); padding-top: 8px; display: flex; justify-content: space-between;">
-                    <span>Decoy ID: <code>${d.id}</code></span>
-                    <span>Port State: <strong style="color: ${isEnabled ? '#10b981' : '#ef4444'};">${isEnabled ? 'BOUND (OPEN)' : 'UNBOUND (CLOSED)'}</strong></span>
+                    <span>Decoy ID: <code>${escapeHTML(d.id)}</code></span><button class="btn btn-sm" onclick="toggleDecoyStatus('${d.id}', ${!d.enabled})">${d.enabled ? "Disable" : "Enable"}</button>
+                    <span>Port State: <strong style="color: ${isEnabled ? '#10b981' : '#ef4444'};">${escapeHTML(d.status || "STOPPED")}</strong></span>
                 </div>
             </div>
         `;
@@ -300,6 +323,7 @@ function prependTelemetryRow(l) {
     const tr = document.createElement("tr");
     tr.innerHTML = createTelemetryRowHTML(l, true);
     tbody.insertBefore(tr, tbody.firstChild);
+    while (tbody.children.length > 100) tbody.lastElementChild.remove();
 
     tr.style.background = "rgba(0, 112, 243, 0.1)";
     setTimeout(() => { tr.style.background = "transparent"; }, 1500);
@@ -313,14 +337,14 @@ function createTelemetryRowHTML(l, innerOnly = false) {
 
     const content = `
         <td class="font-mono" style="color: var(--text-muted); font-size: 11px;">${timestampStr}</td>
-        <td><span style="margin-right: 4px;">${flag}</span> ${country}</td>
+        <td><span style="margin-right: 4px;">${escapeHTML(flag)}</span> ${escapeHTML(country)}</td>
         <td class="font-mono" style="color: var(--accent-blue); font-weight: 600;">${l.attacker_ip}</td>
-        <td><span class="widget-tag">${l.decoy_service}</span></td>
+        <td><span class="widget-tag">${escapeHTML(l.decoy_service)}</span></td>
         <td class="font-mono" style="font-size: 11px;">${escapeHTML(payloadSnippet)}</td>
-        <td><span class="font-mono" style="color: var(--accent-amber); font-weight: bold;">${l.mitre_id || 'T1046'}</span> ${l.mitre_name || ''}</td>
+        <td><span class="font-mono" style="color: var(--accent-amber); font-weight: bold;">${l.mitre_id || 'T1046'}</span> ${escapeHTML(l.mitre_name || '')}</td>
         <td><span class="sev-badge sev-${l.severity}">${l.severity}</span></td>
         <td>
-            <button class="btn btn-sm btn-primary" style="font-size: 11px; font-weight: 600; padding: 2px 8px;" onclick="inspectEventAIReport(${l.id})">⚡ AI Report</button>
+            <button class="btn btn-sm btn-primary" style="font-size: 11px; font-weight: 600; padding: 2px 8px;" onclick="inspectEventAIReport(${l.id})">⚡ Rule-based Report</button>
         </td>
     `;
     return innerOnly ? content : `<tr>${content}</tr>`;
@@ -338,12 +362,12 @@ function renderAttackersTable(attackers) {
     tbody.innerHTML = attackers.map(a => {
         const isQuarantined = a.status === 'QUARANTINED';
         const statusBadge = isQuarantined
-            ? `<span class="sev-badge sev-CRITICAL">QUARANTINED</span>`
+            ? `<span class="sev-badge sev-CRITICAL">SENSOR BLOCKED</span>`
             : `<span class="sev-badge sev-LOW">MONITORING</span>`;
 
         const actionBtn = isQuarantined
             ? `<button class="btn btn-sm btn-secondary" onclick="toggleIPBlock('${a.ip}', 'UNBLOCK')">Unblock</button>`
-            : `<button class="btn btn-sm btn-secondary" onclick="toggleIPBlock('${a.ip}', 'BLOCK')">Quarantine</button>`;
+            : `<button class="btn btn-sm btn-secondary" onclick="toggleIPBlock('${a.ip}', 'BLOCK')">Block on sensors</button>`;
 
         const flag = a.flag || "🌐";
         const country = a.country || "Unknown";
@@ -351,7 +375,7 @@ function renderAttackersTable(attackers) {
         return `
             <tr>
                 <td class="font-mono" style="color: var(--accent-blue); font-weight: 600;">${a.ip}</td>
-                <td>${flag} ${country}</td>
+                <td>${escapeHTML(flag)} ${escapeHTML(country)}</td>
                 <td class="font-mono" style="font-size: 11px; color: var(--text-muted);">${(a.last_seen || '').replace('T', ' ').substring(0, 16)}</td>
                 <td class="font-mono" style="text-align: center;">${a.total_attempts}</td>
                 <td class="font-mono" style="color: ${a.max_risk_score >= 75 ? '#ef4444' : '#10b981'}; font-weight: bold;">${a.max_risk_score} / 100</td>
@@ -381,10 +405,10 @@ function renderHoneytokenList(tokens) {
         return `
             <div class="ht-card">
                 <div style="display: flex; justify-content: space-between;">
-                    <span class="ht-name">${t.name}</span>
-                    <span class="ht-type">${t.type}</span>
+                    <span class="ht-name">${escapeHTML(t.name)}</span>
+                    <span class="ht-type">${escapeHTML(t.type)}</span>
                 </div>
-                <div class="ht-val">${t.token_value}</div>
+                <div class="ht-val">${escapeHTML(t.token_value)}</div>
                 <div class="ht-status ${isHit ? 'hit' : ''}">
                     ${isHit ? `🚨 TRIGGERED (${t.hit_count} Hits)` : '🟢 ACTIVE'}
                 </div>
@@ -397,7 +421,7 @@ async function inspectEventAIReport(logId) {
     const modal = document.getElementById("aiReportModal");
     const content = document.getElementById("modalReportContent");
 
-    content.innerHTML = `<p style="text-align:center; color: var(--text-secondary); padding: 20px;">Synthesizing AI Forensic Intelligence Report for Event <b>#${logId}</b>...</p>`;
+    content.innerHTML = `<p style="text-align:center; color: var(--text-secondary); padding: 20px;">Generating rule-based forensic Report for Event <b>#${logId}</b>...</p>`;
     modal.classList.add("open");
 
     try {
@@ -475,7 +499,7 @@ async function inspectEventAIReport(logId) {
             </div>
         `;
     } catch (err) {
-        content.innerHTML = `<p style="color: var(--accent-red); padding: 20px; text-align: center;">Error generating forensic report: ${err.message}</p>`;
+        content.innerHTML = `<p style="color: var(--accent-red); padding: 20px; text-align: center;">Error generating forensic report: ${escapeHTML(err.message)}</p>`;
     }
 }
 
@@ -483,7 +507,7 @@ async function inspectAIReport(ip) {
     const modal = document.getElementById("aiReportModal");
     const content = document.getElementById("modalReportContent");
 
-    content.innerHTML = `<p style="text-align:center; color: var(--text-secondary);">Synthesizing AI threat intelligence report for <b>${ip}</b>...</p>`;
+    content.innerHTML = `<p style="text-align:center; color: var(--text-secondary);">Generating rule-based threat report for <b>${ip}</b>...</p>`;
     modal.classList.add("open");
 
     try {
@@ -492,13 +516,13 @@ async function inspectAIReport(ip) {
 
         content.innerHTML = `
             <div style="margin-bottom: 16px;">
-                <p><b>Attacker IP:</b> <span class="font-mono" style="color: var(--accent-blue);">${data.attacker_ip}</span> | <b>Risk Score:</b> <span class="sev-badge sev-${data.threat_level}">${data.max_risk_score} / 100</span></p>
-                <p style="margin-top: 4px;"><b>Intent Classification:</b> <span style="color: var(--accent-amber); font-weight: 600;">${data.intent_classification}</span></p>
+                <p><b>Attacker IP:</b> <span class="font-mono" style="color: var(--accent-blue);">${escapeHTML(data.attacker_ip)}</span> | <b>Risk Score:</b> <span class="sev-badge sev-${data.threat_level}">${data.max_risk_score} / 100</span></p>
+                <p style="margin-top: 4px;"><b>Intent Classification:</b> <span style="color: var(--accent-amber); font-weight: 600;">${escapeHTML(data.intent_classification)}</span></p>
             </div>
 
             <div style="background: var(--bg-subtle); padding: 14px; border-left: 3px solid var(--accent-blue); border-radius: 6px; margin-bottom: 16px;">
                 <p><strong>Executive Summary:</strong></p>
-                <p style="color: var(--text-secondary); margin-top: 4px;">${data.summary}</p>
+                <p style="color: var(--text-secondary); margin-top: 4px;">${escapeHTML(data.summary)}</p>
             </div>
 
             <div style="margin-bottom: 16px;">
@@ -509,12 +533,12 @@ async function inspectAIReport(ip) {
             <div>
                 <p><strong>Recommended Action Plan:</strong></p>
                 <ul style="padding-left: 20px; color: var(--text-secondary); margin-top: 4px;">
-                    ${(data.recommendations || []).map(r => `<li style="margin-bottom: 4px;">${r}</li>`).join('')}
+                    ${(data.recommendations || []).map(r => `<li style="margin-bottom: 4px;">${escapeHTML(r)}</li>`).join('')}
                 </ul>
             </div>
         `;
     } catch (err) {
-        content.innerHTML = `<p style="color: var(--accent-red);">Error generating report: ${err.message}</p>`;
+        content.innerHTML = `<p style="color: var(--accent-red);">Error generating report: ${escapeHTML(err.message)}</p>`;
     }
 }
 
@@ -718,7 +742,7 @@ function setupEventListeners() {
         });
     }
 
-    // Modal Close Buttons (AI Report Modal)
+    // Modal Close Buttons (Rule-based Report Modal)
     const btnCloseModal = document.getElementById("btnCloseModal");
     const btnModalClose2 = document.getElementById("btnModalClose2");
     const modal = document.getElementById("aiReportModal");
@@ -758,7 +782,7 @@ async function fetchCsvLogsList() {
                     <td class="font-mono" style="color: var(--accent-blue); font-weight: 600;">${escapeHTML(f.filename)}</td>
                     <td class="font-mono" style="font-size: 11px; color: var(--text-muted);">${f.created_time}</td>
                     <td class="font-mono" style="font-size: 11px;">${sizeKb}</td>
-                    <td class="font-mono" style="text-align: center; font-weight: bold; color: var(--accent-green);">${f.row_count} events</td>
+                    <td class="font-mono" style="text-align: center; font-weight: bold; color: var(--accent-green);">${f.row_count ?? "—"} events</td>
                     <td>
                         <div style="display: flex; gap: 4px;">
                             <button class="btn btn-sm btn-primary" onclick="viewCsvLog('${f.filename}')">👁️ View</button>
@@ -770,7 +794,7 @@ async function fetchCsvLogsList() {
             `;
         }).join('');
     } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="5" class="empty-cell" style="color: var(--accent-red);">Error loading CSV log files: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="empty-cell" style="color: var(--accent-red);">Error loading CSV log files: ${escapeHTML(err.message)}</td></tr>`;
     }
 }
 
@@ -813,7 +837,7 @@ async function viewCsvLog(filename) {
             </div>
         `;
     } catch (err) {
-        content.innerHTML = `<p style="color: var(--accent-red); padding: 20px; text-align: center;">Error viewing CSV file: ${err.message}</p>`;
+        content.innerHTML = `<p style="color: var(--accent-red); padding: 20px; text-align: center;">Error viewing CSV file: ${escapeHTML(err.message)}</p>`;
     }
 }
 
@@ -834,7 +858,7 @@ async function deleteCsvLog(filename) {
 
 function escapeHTML(str) {
     if (!str) return '';
-    return str.replace(/[&<>'"]/g,
+    return String(str).replace(/[&<>'"]/g,
         tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
     );
 }

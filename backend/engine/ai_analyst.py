@@ -102,7 +102,7 @@ def generate_single_event_ai_report(event):
         "intent_classification": intent,
         "forensic_summary": summary,
         "recommendations": remediations,
-        "action_taken": f"Event recorded & isolated by K.A.R.M.A Active Defense Engine."
+        "action_taken": f"Event recorded. Check sensor block status separately; no host firewall isolation."
     }
 
 def generate_ai_threat_summary(attacker_ip, logs, attacker_profile):
@@ -128,7 +128,7 @@ def generate_ai_threat_summary(attacker_ip, logs, attacker_profile):
         remediations = [
             "Immediately isolate associated host network interface.",
             "Revoke compromised credential signatures & rotate active session keys.",
-            "Automated IP Quarantine enforced by Aegis-SOC Active Defense."
+            "Check the KARMA sensor block list; no host firewall isolation is performed."
         ]
     elif "T1059" in mitre_ids:
         intent = "Arbitrary Command Execution / Interactive Shell Compromise"

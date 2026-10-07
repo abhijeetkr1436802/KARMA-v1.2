@@ -1,6 +1,6 @@
 """
 Active Defense & Autonomous Quarantine Manager for Aegis-SOC
-Handles automated mitigation, firewall rules, and containment actions.
+Maintains the block list enforced by KARMA sensors. No OS firewall changes.
 """
 
 from backend.config import QUARANTINE_SCORE_THRESHOLD

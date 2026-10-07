@@ -15,7 +15,8 @@ import uvicorn
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.config import HOST, PORT_API
-from backend.decoy_state import DECOYS, toggle_decoy
+from backend.decoy_state import DECOYS, toggle_decoy, initialize_decoys
+from backend.database import init_db
 
 class KarmaPreflightLauncher:
     def __init__(self, root):
@@ -37,7 +38,10 @@ class KarmaPreflightLauncher:
         self.server_running = False
         self.uvicorn_server = None
 
+        init_db()
+        initialize_decoys()
         self._build_ui()
+        self.root.protocol("WM_DELETE_WINDOW", self.close)
 
     def _build_ui(self):
         # Header Banner
@@ -202,7 +206,21 @@ class KarmaPreflightLauncher:
         threading.Thread(target=launch_tester_gui, daemon=True).start()
         self.log("[+] Tester/Attacker Verification Suite window opened.")
 
+    def close(self):
+        if self.uvicorn_server:
+            self.uvicorn_server.should_exit = True
+        self.root.after(500, self._finish_close)
+
+    def _finish_close(self):
+        if hasattr(self, "server_thread") and self.server_thread.is_alive():
+            self.root.after(500, self._finish_close)
+        else:
+            self.root.destroy()
+
     def log(self, text):
+        if threading.current_thread() is not threading.main_thread():
+            self.root.after(0, self.log, text)
+            return
         self.txt_log.insert("end", text + "\n")
         self.txt_log.see("end")
 
@@ -213,11 +231,14 @@ class KarmaPreflightLauncher:
             self.stop_server()
 
     def start_server(self):
+        if hasattr(self, "server_thread") and self.server_thread.is_alive():
+            self.log("[!] Previous server is still shutting down; please wait.")
+            return
         # Apply Checkbox States to Global DECOYS State
         for item_id, var in self.vars.items():
             is_enabled = var.get()
             toggle_decoy(item_id, is_enabled)
-            status_str = "🟢 ACTIVE & LISTENING" if is_enabled else "🔴 DISABLED (Unbound at OS level)"
+            status_str = "ENABLED (binding pending)" if is_enabled else "DISABLED"
             self.log(f"[+] Decoy '{item_id}': {status_str}")
 
         # Disable checkboxes while running
@@ -236,27 +257,22 @@ class KarmaPreflightLauncher:
         self.log("================================================================")
 
         # Launch Uvicorn in Background Thread
-        threading.Thread(target=self._run_uvicorn, daemon=True).start()
+        self.server_thread = threading.Thread(target=self._run_uvicorn, daemon=True)
+        self.server_thread.start()
 
     def _run_uvicorn(self):
         try:
-            config = uvicorn.Config("backend.app:app", host=HOST, port=PORT_API, reload=False, log_level="info")
+            config = uvicorn.Config("backend.app:app", host=HOST, port=PORT_API, reload=False, log_level="info", proxy_headers=False, limit_concurrency=128, timeout_graceful_shutdown=15)
             self.uvicorn_server = uvicorn.Server(config)
             self.uvicorn_server.run()
-        except Exception as e:
+        except (Exception, SystemExit) as e:
             self.log(f"[!] Server Error: {e}")
+        finally:
+            self.root.after(0, self.stop_server)
 
     def stop_server(self):
         if self.uvicorn_server:
             self.uvicorn_server.should_exit = True
-
-        from backend.sensors.raw_decoy import stop_raw_sensors
-        from backend.sensors.ssh_honeypot import stop_ssh_sensor
-        from backend.sensors.web_honeypot import stop_web_sensor
-
-        stop_raw_sensors()
-        stop_ssh_sensor()
-        stop_web_sensor()
 
         self.server_running = False
 
@@ -271,7 +287,7 @@ class KarmaPreflightLauncher:
         )
 
         self.log("================================================================")
-        self.log("[+] K.A.R.M.A SIEM Server STOPPED cleanly.")
+        self.log("[+] K.A.R.M.A SIEM Server shutdown requested.")
         self.log("[+] You may modify decoy settings above and click LAUNCH again.")
         self.log("================================================================")
 

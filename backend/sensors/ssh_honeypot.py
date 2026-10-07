@@ -4,13 +4,17 @@ Handles OpenSSH key exchange via Paramiko, traps authentication brute-force atte
 and records post-exploitation bash command execution telemetry.
 """
 
+from backend.database import mark_event_quarantine
+
 import os
 import socket
 import threading
 import time
 import logging
 import paramiko
-from backend.config import PORT_SSH_HONEYPOT
+from backend.config import PORT_SSH_HONEYPOT, DATA_DIR, SENSOR_HOST
+from backend.sensors.tcp_server import BoundedTCPServer
+from backend.database import is_quarantined, get_attempt_count
 from backend.engine.mitre_mapper import map_payload_to_mitre
 from backend.engine.threat_score import calculate_event_risk
 from backend.database import log_attack_event, get_geo_info
@@ -20,25 +24,19 @@ from backend.engine.active_defense import active_defense_engine
 logging.getLogger("paramiko.transport").setLevel(logging.CRITICAL)
 
 # Global instance reference for stopping
-_ssh_honeypot_instance = None
 
 # Persistent RSA Host Key for Paramiko SSH protocol handshake
-KEY_FILE = os.path.join(os.path.dirname(__file__), "ssh_host_rsa_key")
+KEY_FILE = str(DATA_DIR / "ssh_host_rsa_key")
 
 def get_persistent_host_key():
     if os.path.exists(KEY_FILE):
-        try:
-            return paramiko.RSAKey(filename=KEY_FILE)
-        except Exception:
-            pass
-    key = paramiko.RSAKey.generate(2048)
-    try:
-        key.write_private_key_file(KEY_FILE)
-    except Exception:
-        pass
+        return paramiko.RSAKey(filename=KEY_FILE)
+    DATA_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    key = paramiko.RSAKey.generate(3072)
+    with open(KEY_FILE, "x", encoding="utf-8", opener=lambda p, flags: os.open(p, flags, 0o600)) as file:
+        key.write_private_key(file)
     return key
 
-HOST_KEY = get_persistent_host_key()
 
 FAKE_SHELL_RESPONSES = {
     "whoami": "root\r\n",
@@ -66,9 +64,9 @@ class ParamikoHoneypotInterface(paramiko.ServerInterface):
         return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
 
     def check_auth_password(self, username, password):
-        payload_info = f"SSH Login Attempt: USER '{username}' / PASS '{password}'"
+        payload_info = f"SSH Login Attempt: USER '{username}' / PASS '[redacted]'"
         mitre = map_payload_to_mitre("SSH_HONEYPOT", "ssh_command_execution", payload_info)
-        score, severity = calculate_event_risk(mitre['risk_score'])
+        score, severity = calculate_event_risk(mitre['risk_score'], get_attempt_count(self.client_ip) + 1)
 
         log_id = log_attack_event(
             attacker_ip=self.client_ip,
@@ -85,6 +83,7 @@ class ParamikoHoneypotInterface(paramiko.ServerInterface):
 
         geo = get_geo_info(self.client_ip)
         quarantined, _ = active_defense_engine.process_event(self.client_ip, score, "SSH Brute Force")
+        mark_event_quarantine(log_id, quarantined)
 
         if self.broadcast_cb:
             self.broadcast_cb({
@@ -108,10 +107,10 @@ class ParamikoHoneypotInterface(paramiko.ServerInterface):
                 "flag": geo['flag']
             })
 
-        return paramiko.AUTH_SUCCESSFUL
+        return paramiko.AUTH_FAILED if quarantined else paramiko.AUTH_SUCCESSFUL
 
     def check_auth_publickey(self, username, key):
-        return paramiko.AUTH_SUCCESSFUL
+        return self.check_auth_password(username, "[public-key]")
 
     def check_channel_pty_request(self, channel, term, modes, width, height, pixelwidth, pixelheight):
         return True
@@ -120,49 +119,23 @@ class ParamikoHoneypotInterface(paramiko.ServerInterface):
         self.event_event.set()
         return True
 
-class SSHHoneypotServer:
-    def __init__(self, host="0.0.0.0", port=PORT_SSH_HONEYPOT, broadcast_callback=None):
-        global _ssh_honeypot_instance
-        self.host = host
-        self.port = port
+class SSHHoneypotServer(BoundedTCPServer):
+    def __init__(self, host=SENSOR_HOST, port=PORT_SSH_HONEYPOT, broadcast_callback=None):
+        super().__init__(port, self._handle_client, host)
         self.broadcast_callback = broadcast_callback
-        self.running = False
-        self.server_socket = None
-        _ssh_honeypot_instance = self
+        self.host_key = None
 
     def start(self):
-        from backend.decoy_state import is_decoy_enabled
-        if not is_decoy_enabled("ssh_2222"):
-            print(f"[SSH Decoy Sensor] SSH Honeypot (Port {self.port}) is DISABLED in launcher config. Skipping socket bind.")
-            return
-
-        self.running = True
-        thread = threading.Thread(target=self._run_server, daemon=True)
-        thread.start()
-
-    def _run_server(self):
-        try:
-            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.server_socket.bind((self.host, self.port))
-            self.server_socket.listen(10)
-            print(f"[SSH Decoy Sensor] Listening on port {self.port}...")
-
-            while self.running:
-                try:
-                    client_sock, client_addr = self.server_socket.accept()
-                    client_ip = client_addr[0]
-                    threading.Thread(target=self._handle_client, args=(client_sock, client_ip), daemon=True).start()
-                except Exception:
-                    break
-        except Exception as e:
-            print(f"[SSH Decoy Sensor] Socket error on port {self.port}: {e}")
+        self.host_key = get_persistent_host_key()
+        super().start()
 
     def _handle_client(self, client_sock, client_ip):
         try:
             # First peek to see if client sends SSH handshake or raw data
             transport = paramiko.Transport(client_sock)
-            transport.add_server_key(HOST_KEY)
+            transport.add_server_key(self.host_key)
+            transport.banner_timeout = 10
+            transport.auth_timeout = 15
             server = ParamikoHoneypotInterface(client_ip, self.broadcast_callback, self.port)
 
             try:
@@ -185,8 +158,9 @@ class SSHHoneypotServer:
             channel.send(b"\r\nWelcome to Aegis Linux Security Gateway 22.04 LTS\r\n\r\n")
             channel.send(b"root@aegis-gateway:~# ")
 
+            channel.settimeout(15)
             buffer = ""
-            while self.running and not channel.closed:
+            while self.running and not channel.closed and not is_quarantined(client_ip):
                 data = channel.recv(1024)
                 if not data:
                     break
@@ -218,6 +192,9 @@ class SSHHoneypotServer:
                             buffer = buffer[:-1]
                             channel.send(b"\b \b")
                     else:
+                        if len(buffer) >= 8192:
+                            channel.close()
+                            return
                         buffer += char
                         channel.send(char.encode('utf-8'))
 
@@ -234,7 +211,7 @@ class SSHHoneypotServer:
             client_sock.sendall(b"root@aegis-gateway:~# ")
             client_sock.settimeout(6.0)
 
-            while self.running:
+            while self.running and not is_quarantined(client_ip):
                 data = client_sock.recv(1024)
                 if not data:
                     break
@@ -269,7 +246,7 @@ class SSHHoneypotServer:
             mitre_key = "system_discovery"
 
         mitre = map_payload_to_mitre("SSH_HONEYPOT", mitre_key, payload_info)
-        score, severity = calculate_event_risk(mitre['risk_score'])
+        score, severity = calculate_event_risk(mitre['risk_score'], get_attempt_count(client_ip) + 1)
 
         log_id = log_attack_event(
             attacker_ip=client_ip,
@@ -286,6 +263,7 @@ class SSHHoneypotServer:
 
         geo = get_geo_info(client_ip)
         quarantined, _ = active_defense_engine.process_event(client_ip, score, mitre['mitre_name'])
+        mark_event_quarantine(log_id, quarantined)
 
         if self.broadcast_callback:
             self.broadcast_callback({
@@ -312,7 +290,7 @@ class SSHHoneypotServer:
     def _log_scan_probe(self, client_ip):
         payload_info = f"SSH Port Reconnaissance / TCP Banner Probe on Port {self.port}"
         mitre = map_payload_to_mitre("SSH_HONEYPOT", "port_scan", payload_info)
-        score, severity = calculate_event_risk(mitre['risk_score'])
+        score, severity = calculate_event_risk(mitre['risk_score'], get_attempt_count(client_ip) + 1)
 
         log_id = log_attack_event(
             attacker_ip=client_ip,
@@ -329,6 +307,7 @@ class SSHHoneypotServer:
 
         geo = get_geo_info(client_ip)
         quarantined, _ = active_defense_engine.process_event(client_ip, score, mitre['mitre_name'])
+        mark_event_quarantine(log_id, quarantined)
 
         if self.broadcast_callback:
             self.broadcast_callback({
@@ -351,16 +330,3 @@ class SSHHoneypotServer:
                 "lng": geo['lng'],
                 "flag": geo['flag']
             })
-
-    def stop(self):
-        self.running = False
-        if self.server_socket:
-            try:
-                self.server_socket.close()
-            except Exception:
-                pass
-
-def stop_ssh_sensor():
-    global _ssh_honeypot_instance
-    if _ssh_honeypot_instance:
-        _ssh_honeypot_instance.stop()

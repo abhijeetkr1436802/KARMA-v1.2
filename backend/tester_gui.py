@@ -138,7 +138,7 @@ class KarmaTesterApp:
         ).grid(row=1, column=0, padx=4, pady=4, sticky="ew")
 
         tk.Button(
-            btn_grid, text="🍯 Test Honeytoken API (Port 8000)", font=("Segoe UI", 9, "bold"),
+            btn_grid, text="🍯 Test Honeytoken API (Port 8080)", font=("Segoe UI", 9, "bold"),
             bg="#7c3aed", fg="#fff", activebackground="#6d28d9", activeforeground="#fff", pady=6, cursor="hand2",
             command=self.test_honeytoken
         ).grid(row=1, column=1, padx=4, pady=4, sticky="ew")
@@ -314,9 +314,9 @@ class KarmaTesterApp:
 
     def _run_honeytoken_test(self):
         target = self.get_target()
-        self.log(f"\n--- [TEST] Triggering Honeytoken API Trap on http://{target}:8000/api/v1/auth/keys ---")
+        self.log(f"\n--- [TEST] Triggering Honeytoken API Trap on http://{target}:8080/api/v1/auth/keys ---")
         try:
-            url = f"http://{target}:8000/api/v1/auth/keys"
+            url = f"http://{target}:8080/api/v1/auth/keys"
             try:
                 urllib.request.urlopen(url, timeout=4)
             except urllib.error.HTTPError as e:

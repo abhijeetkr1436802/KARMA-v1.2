@@ -12,7 +12,7 @@ let karmaChatHistory = [
 ];
 
 let isAiThinking = false;
-let includeSiemContext = true;
+let includeSiemContext = false;
 
 document.addEventListener("DOMContentLoaded", () => {
     initKarmaAiChat();
@@ -190,7 +190,7 @@ async function sendUserChatMessage(text) {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                messages: karmaChatHistory,
+                messages: karmaChatHistory.slice(-12).map(({role, content}) => ({role, content: content.slice(0, 8000)})),
                 include_siem_context: includeSiemContext
             })
         });
