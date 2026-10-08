@@ -5,7 +5,7 @@ Simulates vulnerability web services, traps SQL Injection, XSS, and Path Travers
 
 from backend.database import mark_event_quarantine
 
-from fastapi import FastAPI, Request, Form
+from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 import uvicorn
 import threading
@@ -283,6 +283,35 @@ def api_trap(request: Request):
         return JSONResponse({"detail": "Not found"}, status_code=404)
     process_web_attack(request.client.host, request.url.path, "GET", "Honeytoken URL Triggered")
     return JSONResponse({"detail": "Access denied"}, status_code=403)
+
+@web_decoy_app.get('/documents/{token}', response_class=HTMLResponse)
+def document_landing(token: str):
+    from backend.documents import lookup_document
+    from html import escape
+    document = lookup_document(token)
+    if not document:
+        raise HTTPException(404, 'Document link missing or expired')
+    return f'''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Document acknowledgement</title>
+<style>body{{font:17px system-ui;max-width:650px;margin:12vh auto;padding:24px;background:#101726;color:#eaf0f6;line-height:1.6}}button{{padding:14px 24px;background:#2563eb;color:white;border:0;border-radius:8px;font:inherit}}</style>
+<h1>Aegis document register</h1><p>{escape(document['filename'])}</p>
+<p>This is a KARMA security lab demonstration. Confirming sends this document's session identifier and your connection IP to the lab dashboard.</p>
+<p>No software is installed and no access to your computer is granted.</p>
+<form method="post"><button name="acknowledgement" value="confirm">Confirm document interaction</button></form></html>'''
+
+
+@web_decoy_app.post('/documents/{token}', response_class=HTMLResponse)
+def document_confirmation(request: Request, token: str, acknowledgement: str = Form(..., max_length=16)):
+    from backend.documents import lookup_document, record_document_event
+    document = lookup_document(token)
+    if not document:
+        raise HTTPException(404, 'Document link missing or expired')
+    if acknowledgement != 'confirm':
+        raise HTTPException(400, 'Explicit acknowledgement required')
+    record_document_event(document['filename'], document['source_ip'], document['session_id'],
+                          request.client.host, confirmed=True, broadcast=broadcast_cb)
+    return '<!doctype html><title>Interaction recorded</title><h1>Lab interaction recorded</h1><p>The KARMA dashboard received an acknowledgement. No backdoor was opened.</p>'
+
 
 @web_decoy_app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 def catch_all(request: Request, full_path: str):

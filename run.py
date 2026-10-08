@@ -1,7 +1,27 @@
 """Desktop or single-process headless entry point."""
 import argparse
 import logging
-from backend import config
+import importlib.util
+from pathlib import Path
+import sys
+
+
+ROOT = Path(__file__).resolve().parent
+
+
+def check_dependencies():
+    modules = ('fastapi', 'uvicorn', 'websockets', 'paramiko', 'pydantic',
+               'requests', 'python_multipart', 'pypdf')
+    missing = [name for name in modules if importlib.util.find_spec(name) is None]
+    if missing:
+        command = [sys.executable, '-m', 'pip', 'install', '-r', str(ROOT / 'requirements.txt')]
+        if sys.platform == 'win32':
+            install_command = '& ' + ' '.join("'" + part.replace("'", "''") + "'" for part in command)
+        else:
+            import shlex
+            install_command = shlex.join(command)
+        raise SystemExit('KARMA cannot start: missing dependencies: ' + ', '.join(missing)
+                         + '\nPython: ' + sys.executable + '\nInstall with:\n' + install_command)
 
 
 def main():
@@ -10,6 +30,8 @@ def main():
     parser.add_argument("--certfile", help="TLS certificate PEM")
     parser.add_argument("--keyfile", help="TLS private key PEM")
     args = parser.parse_args()
+    check_dependencies()
+    from backend import config
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     if config.PRODUCTION and not (args.certfile and args.keyfile):
         parser.error("Production requires --headless, --certfile and --keyfile")

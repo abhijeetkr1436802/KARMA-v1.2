@@ -55,7 +55,9 @@ class AuditCsvLogger:
                 "MITRE_Name",
                 "Severity",
                 "Risk_Score",
-                "Action_Taken"
+                "Action_Taken",
+                "Location_Source",
+                "Location_Label"
             ]
             self.csv_writer.writerow(headers)
             self.file_handle.flush()
@@ -89,7 +91,9 @@ class AuditCsvLogger:
                 event.get("mitre_name", ""),
                 event.get("severity", ""),
                 event.get("risk_score", 0),
-                "Blocked on KARMA sensors" if event.get("quarantined") else "Monitored"
+                "Blocked on KARMA sensors" if event.get("quarantined") else "Monitored",
+                event.get('geo_source', 'unknown'),
+                event.get('geo_label', 'Location unavailable')
             ]
             row = ["'" + str(v) if str(v).lstrip().startswith(("=", "+", "-", "@")) else v for v in row]
             self.csv_writer.writerow(row)

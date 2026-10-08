@@ -157,7 +157,8 @@ class RequestGuard:
                 message.setdefault("headers", []).extend([
                     (b"x-content-type-options", b"nosniff"),
                     (b"x-frame-options", b"DENY"),
-                    (b"referrer-policy", b"no-referrer"),
+                    # Preserve Origin on same-origin form POSTs; no-referrer can turn it into null.
+                    (b"referrer-policy", b"same-origin"),
                     (b"cache-control", b"no-store"),
                     (b"content-security-policy", b"frame-ancestors 'none'; object-src 'none'; base-uri 'self'"),
                 ])

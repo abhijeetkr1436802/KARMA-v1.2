@@ -61,6 +61,8 @@ class BoundedTCPServer:
         try:
             if not is_quarantined(ip):
                 self.handler(client, ip)
+            else:
+                log.warning('Sensor connection denied: %s is quarantined (port %s). Unblock the test IP in Attacker Profiles; use Observe mode for interactive labs.', ip, self.port)
         except (OSError, EOFError):
             pass
         except Exception:

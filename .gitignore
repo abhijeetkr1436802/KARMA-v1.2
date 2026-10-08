@@ -35,3 +35,5 @@ data/
 *-wal
 *-shm
 backend/sensors/ssh_host_rsa_key
+node_modules/
+.artifact-previews/

@@ -37,6 +37,23 @@ There is no built-in off-host backup, tamper-proof audit ledger, or automatic di
 
 ## Health and limits
 
+Private LAN/loopback events display the operator-configured Bengaluru lab marker on
+both Esri maps. Tooltips, reports and new CSV exports label its source as configured.
+This is not IP geolocation. Public, documentation, multicast and unspecified addresses
+have no coordinates. API reads apply the current lab setting to historical records;
+stored event coordinates describe the configuration at event creation. Existing CSV
+files are not rewritten. Set `KARMA_LAB_LOCATION_ENABLED=0` to disable the override.
+
+The dashboard's observation mode suppresses automatic quarantine for demonstrations;
+manual and pre-existing blocks still apply. The saved mode takes precedence over the
+initial `KARMA_ENGAGEMENT_MODE` environment default (`contain`). Inspect this setting
+before exposing sensors. Document acknowledgement routes run on the web sensor, not
+the management listener. For NAT or remote labs, configure a reachable HTTP(S) origin
+with `KARMA_CALLBACK_BASE_URL`. An acknowledgement identifies a link interaction,
+not computer compromise. Tokens expire after seven days, are stored as hashes, and
+are bounded to 10,000 records. The shell cannot execute host programs or access host
+files, and SFTP uploads are rejected.
+
 - `/healthz` reports process liveness; production requires HTTPS and an allowed Host even for health probes.
 - Authenticated `/api/status` reports listener state and telemetry queue drops. Alert on ERROR/STOPPED enabled sensors or a growing drop count.
 - HTTP bodies: 2 MiB including multipart overhead; body reads time out after 10 seconds without data.

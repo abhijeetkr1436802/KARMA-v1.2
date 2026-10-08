@@ -21,6 +21,7 @@ class SensorManager:
             return
         from backend.sensors.ssh_honeypot import SSHHoneypotServer
         from backend.sensors.raw_decoy import RawDecoyServer
+        from backend.sensors.ftp_honeypot import FTPHoneypotServer
         from backend.sensors.web_honeypot import WebHoneypotServer, set_web_broadcast_callback
         set_web_broadcast_callback(self.broadcast)
         with self.lock:
@@ -38,6 +39,8 @@ class SensorManager:
                             server = SSHHoneypotServer(broadcast_callback=self.broadcast)
                         elif id == "web_8080":
                             server = WebHoneypotServer()
+                        elif decoy['port'] == 21:
+                            server = FTPHoneypotServer(broadcast_callback=self.broadcast)
                         else:
                             server = RawDecoyServer([decoy["port"]], self.broadcast)
                         server.start()

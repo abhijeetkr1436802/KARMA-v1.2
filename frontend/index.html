@@ -178,6 +178,22 @@
                 </section>
 
                 <!-- ROW 1: TIME SERIES TREND LINE PLOT & WORLD MAP (Logz.io Image 1 Style) -->
+                <section id="documentLab" class="widget-box" style="margin-bottom:20px">
+                    <div class="widget-header"><h3>Document decoy lab</h3></div>
+                    <p>Download the company reports with SFTP from <code>/root</code>. Follow the document link and submit the acknowledgement to trigger a live alert.</p>
+                    <p style="color:var(--text-secondary);font-size:12px">A file read does not establish a completed download. Opening a file alone sends no signal. Confirmations do not grant access to the reader's computer.</p>
+                    <label for="engagementMode">Engagement mode</label>
+                    <select id="engagementMode" onchange="setEngagementMode(this.value)">
+                        <option value="contain">Contain — automatically block high-risk sessions</option>
+                        <option value="observe">Observe — keep sessions open for the lab</option>
+                    </select>
+                    <p id="engagementStatus" role="status" style="font-size:12px">Existing blocks remain active; unblock your test IP in Attacker Profiles if needed.</p>
+                    <div id="documentEvents" aria-live="polite" style="max-height:210px;overflow:auto"></div>
+                </section>
+                <div id="documentAlert" role="status" hidden style="position:fixed;right:24px;bottom:24px;z-index:5000;max-width:460px;padding:22px;background:var(--bg-card,#172033);color:var(--text-primary);border:2px solid #3b82f6;border-radius:12px;box-shadow:0 8px 32px #0005">
+                    <strong>Document decoy alert</strong><p id="documentAlertText"></p>
+                    <button class="btn btn-sm" onclick="document.getElementById('documentAlert').hidden=true">Dismiss</button>
+                </div>
                 <section class="dashboard-row row-50-50">
                     <div class="widget-box">
                         <div class="widget-header"
@@ -203,11 +219,12 @@
                     <!-- ATTACKER ORIGIN WORLD MAP WIDGET -->
                     <div class="widget-box">
                         <div class="widget-header">
-                            <h3>Attacker Origin World Map</h3>
-                            <span class="widget-tag">Geolocation Markers</span>
+                            <h3>Attack Sources and Lab Locations</h3>
+                            <span class="widget-tag">Location source labeled</span>
                         </div>
                         <div class="widget-body map-body">
                             <div id="attackerWorldMap"></div>
+                            <p id="attackerMapStatus" role="status" style="font-size:12px; padding:8px 0; color:var(--text-secondary)"></p>
                         </div>
                     </div>
                 </section>
@@ -482,11 +499,12 @@
                 <!-- TOP SECTION: ATTACKER ORIGIN GEOLOCATION WORLD MAP -->
                 <div class="widget-box width-100" style="margin-bottom: 20px;">
                     <div class="widget-header">
-                        <h3>Attacker Origin Geolocation World Map</h3>
+                        <h3>Attack Sources and Configured Lab Locations</h3>
                         <span class="widget-tag">Global Threat Vectors</span>
                     </div>
                     <div class="widget-body map-body">
                         <div id="threatsWorldMap" style="height: 340px; width: 100%; border-radius: 6px;"></div>
+                        <p id="threatsMapStatus" role="status" style="font-size:12px; padding:8px 0; color:var(--text-secondary)"></p>
                     </div>
                 </div>
 
@@ -1089,7 +1107,7 @@
     <script src="/static/js/mitre.js?v=2.1"></script>
     <script src="/static/js/tools.js?v=2.1"></script>
     <script src="/static/js/ai_chat.js?v=2.1"></script>
-    <script src="/static/js/app.js?v=2.1"></script>
+    <script src="/static/js/app.js?v=2.3"></script>
 <script>document.querySelectorAll("input[type=file]").forEach(input => input.accept = ".eml");</script>
 </body>
 

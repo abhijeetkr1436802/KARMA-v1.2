@@ -4,11 +4,36 @@ Maintains the block list enforced by KARMA sensors. No OS firewall changes.
 """
 
 from backend.config import QUARANTINE_SCORE_THRESHOLD
+from backend import config
 from backend.database import add_to_quarantine, remove_from_quarantine, get_quarantine_list
 
 class ActiveDefenseManager:
     def __init__(self):
-        self.auto_quarantine_enabled = True
+        self.auto_quarantine_enabled = config.ENGAGEMENT_MODE == 'contain'
+
+    def load_mode(self):
+        from backend.database import get_db
+        import json
+        conn = get_db()
+        try:
+            row = conn.execute("SELECT value FROM runtime_settings WHERE id='engagement_mode'").fetchone()
+            mode = json.loads(row[0]) if row else config.ENGAGEMENT_MODE
+            self.auto_quarantine_enabled = mode != 'observe'
+        finally:
+            conn.close()
+
+    def set_mode(self, mode):
+        from backend.database import get_db
+        import json
+        if mode not in ('observe', 'contain'):
+            raise ValueError('Invalid engagement mode')
+        conn = get_db()
+        try:
+            conn.execute("INSERT OR REPLACE INTO runtime_settings(id,value) VALUES('engagement_mode',?)", (json.dumps(mode),))
+            conn.commit()
+            self.auto_quarantine_enabled = mode == 'contain'
+        finally:
+            conn.close()
 
     def process_event(self, attacker_ip, risk_score, mitre_name):
         if not self.auto_quarantine_enabled:

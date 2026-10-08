@@ -11,6 +11,7 @@ import socket
 import threading
 import time
 import logging
+import codecs
 import paramiko
 from backend.config import PORT_SSH_HONEYPOT, DATA_DIR, SENSOR_HOST
 from backend.sensors.tcp_server import BoundedTCPServer
@@ -19,6 +20,8 @@ from backend.engine.mitre_mapper import map_payload_to_mitre
 from backend.engine.threat_score import calculate_event_risk
 from backend.database import log_attack_event, get_geo_info
 from backend.engine.active_defense import active_defense_engine
+from backend.sensors.virtual_shell import VirtualShell, VirtualSFTP
+from backend.sensors.terminal import TerminalInput
 
 # Silence Paramiko background transport exception logging to keep console output clean
 logging.getLogger("paramiko.transport").setLevel(logging.CRITICAL)
@@ -52,14 +55,19 @@ FAKE_SHELL_RESPONSES = {
 }
 
 class ParamikoHoneypotInterface(paramiko.ServerInterface):
-    def __init__(self, client_ip, broadcast_cb=None, port=2222):
+    def __init__(self, client_ip, broadcast_cb=None, port=2222, shell=None):
         self.client_ip = client_ip
         self.broadcast_cb = broadcast_cb
         self.port = port
         self.event_event = threading.Event()
+        self.shell = shell
+        self.channel_open = False
+        self.mode = None
+        self.command = None
 
     def check_channel_request(self, kind, chanid):
-        if kind == 'session':
+        if kind == 'session' and not self.channel_open:
+            self.channel_open = True
             return paramiko.OPEN_SUCCEEDED
         return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
 
@@ -112,12 +120,31 @@ class ParamikoHoneypotInterface(paramiko.ServerInterface):
     def check_auth_publickey(self, username, key):
         return self.check_auth_password(username, "[public-key]")
 
-    def check_channel_pty_request(self, channel, term, modes, width, height, pixelwidth, pixelheight):
+    def check_channel_pty_request(self, channel, term, width, height, pixelwidth, pixelheight, modes):
         return True
 
     def check_channel_shell_request(self, channel):
+        if self.mode is not None:
+            return False
+        self.mode = 'shell'
         self.event_event.set()
         return True
+
+    def check_channel_exec_request(self, channel, command):
+        if self.mode is not None or len(command) > 8192:
+            return False
+        self.mode = 'exec'
+        self.command = command.decode('utf-8', errors='replace')
+        self.event_event.set()
+        return True
+
+    def check_channel_subsystem_request(self, channel, name):
+        if name != 'sftp' or self.mode is not None:
+            return False
+        self.mode = 'sftp'
+        accepted = super().check_channel_subsystem_request(channel, name)
+        self.event_event.set()
+        return accepted
 
 class SSHHoneypotServer(BoundedTCPServer):
     def __init__(self, host=SENSOR_HOST, port=PORT_SSH_HONEYPOT, broadcast_callback=None):
@@ -126,17 +153,26 @@ class SSHHoneypotServer(BoundedTCPServer):
         self.host_key = None
 
     def start(self):
+        from backend.documents import callback_base, ASSETS, FILES
+        callback_base('127.0.0.1')
+        for name in FILES:
+            if not (ASSETS / name).is_file():
+                raise RuntimeError(f'Missing decoy document template: {name}')
         self.host_key = get_persistent_host_key()
         super().start()
 
     def _handle_client(self, client_sock, client_ip):
+        transport = None
         try:
             # First peek to see if client sends SSH handshake or raw data
             transport = paramiko.Transport(client_sock)
+            transport.local_version = 'SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.1'
             transport.add_server_key(self.host_key)
             transport.banner_timeout = 10
-            transport.auth_timeout = 15
-            server = ParamikoHoneypotInterface(client_ip, self.broadcast_callback, self.port)
+            transport.auth_timeout = 120
+            shell = VirtualShell(client_ip, client_sock.getsockname()[0], self.broadcast_callback)
+            server = ParamikoHoneypotInterface(client_ip, self.broadcast_callback, self.port, shell)
+            transport.set_subsystem_handler('sftp', paramiko.SFTPServer, VirtualSFTP)
 
             try:
                 transport.start_server(server=server)
@@ -146,64 +182,78 @@ class SSHHoneypotServer(BoundedTCPServer):
                 self._handle_raw_client(client_sock, client_ip)
                 return
 
-            channel = transport.accept(15)
+            channel = transport.accept(120)
             if channel is None:
                 self._log_scan_probe(client_ip)
                 transport.close()
                 return
 
-            server.event_event.wait(10)
+            if not server.event_event.wait(10):
+                return
+            deadline = time.monotonic() + 900
+            if server.mode == 'sftp':
+                while self.running and transport.is_active() and not channel.closed and not is_quarantined(client_ip):
+                    if time.monotonic() >= deadline or time.monotonic() - shell.last_activity > 120:
+                        break
+                    time.sleep(0.25)
+                return
+            if server.mode == 'exec':
+                self._process_command(server.command, client_ip)
+                if not is_quarantined(client_ip):
+                    response, status = shell.execute(server.command)
+                    channel.sendall(response.encode('utf-8'))
+                    channel.send_exit_status(status)
+                return
 
             # Send welcome prompt
             channel.send(b"\r\nWelcome to Aegis Linux Security Gateway 22.04 LTS\r\n\r\n")
-            channel.send(b"root@aegis-gateway:~# ")
+            channel.sendall(shell.prompt.encode())
 
-            channel.settimeout(15)
-            buffer = ""
-            while self.running and not channel.closed and not is_quarantined(client_ip):
+            channel.settimeout(120)
+            terminal = TerminalInput()
+            decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+            while self.running and not channel.closed and not is_quarantined(client_ip) and time.monotonic() < deadline:
+                channel.settimeout(min(120, max(0.1, deadline-time.monotonic())))
                 data = channel.recv(1024)
                 if not data:
                     break
 
-                text = data.decode('utf-8', errors='ignore')
+                text = decoder.decode(data)
                 for char in text:
-                    if char in ('\r', '\n'):
-                        channel.send(b"\r\n")
-                        cmd = buffer.strip()
-                        buffer = ""
-
-                        if cmd:
-                            if cmd.lower() in ["exit", "quit"]:
-                                channel.send(b"logout\r\n")
-                                channel.close()
-                                break
-
-                            self._process_command(cmd, client_ip)
-
-                            cmd_lower = cmd.lower()
-                            resp = FAKE_SHELL_RESPONSES.get(cmd_lower)
-                            if not resp:
-                                resp = f"bash: {cmd.split()[0]}: command not found\r\n"
-                            channel.send(resp.encode('utf-8'))
-
-                        channel.send(b"root@aegis-gateway:~# ")
-                    elif char == '\x7f' or char == '\x08': # Backspace
-                        if len(buffer) > 0:
-                            buffer = buffer[:-1]
-                            channel.send(b"\b \b")
-                    else:
-                        if len(buffer) >= 8192:
-                            channel.close()
+                    echo, cmd, eof = terminal.feed(char, shell.prompt)
+                    if echo:
+                        channel.sendall(echo.encode('utf-8'))
+                    if eof:
+                        channel.send_exit_status(0)
+                        return
+                    if cmd is None:
+                        continue
+                    cmd = cmd.strip()
+                    if cmd in ('exit', 'quit'):
+                        channel.sendall(b'logout\r\n')
+                        channel.send_exit_status(0)
+                        return
+                    if cmd:
+                        self._process_command(cmd, client_ip)
+                        if is_quarantined(client_ip):
+                            channel.sendall(b'\r\nSession ended by KARMA containment policy.\r\n')
                             return
-                        buffer += char
-                        channel.send(char.encode('utf-8'))
+                        response, _ = shell.execute(cmd)
+                        channel.sendall(response.replace('\n', '\r\n').encode('utf-8'))
+                    channel.sendall(shell.prompt.encode())
 
             transport.close()
+        except (socket.timeout, EOFError, OSError):
+            pass
         except Exception:
+            logging.getLogger(__name__).exception('SSH session failed for %s on port %s', client_ip, self.port)
             try:
                 client_sock.close()
             except Exception:
                 pass
+        finally:
+            if transport is not None:
+                transport.close()
 
     def _handle_raw_client(self, client_sock, client_ip):
         try:

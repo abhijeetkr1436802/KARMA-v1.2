@@ -725,6 +725,19 @@ body {
     width: 100%;
 }
 
+#documentLab p {
+    margin: 10px 0;
+    line-height: 1.6;
+}
+
+#engagementMode {
+    max-width: 100%;
+    margin: 8px 0;
+    padding: 8px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+}
+
 .widget-box {
     background: var(--bg-widget);
     border: 1px solid var(--border-color);

@@ -24,7 +24,14 @@ def generate_single_event_ai_report(event):
     payload_lower = payload.lower()
 
     # Dynamic Intent & Detailed Forensic Summary Analysis
-    if "cat /etc/passwd" in payload_lower or "cat /etc/shadow" in payload_lower:
+    if service == 'DOCUMENT_DECOY':
+        intent = 'Decoy document interaction'
+        summary = (f"Recorded observation: {attack_type}. Source connection: {ip}. "
+                   'A file read does not establish a completed download. An acknowledgement does not '
+                   'establish local file opening, code execution, device identity or a backdoor.')
+        remediations = ['Review the document session and original source IP in the event payload.',
+                        'Correlate this observation with SSH telemetry before drawing conclusions.']
+    elif "cat /etc/passwd" in payload_lower or "cat /etc/shadow" in payload_lower:
         intent = "Credential Harvesting & Password Database Leak Attempt"
         summary = (f"CRITICAL FORENSIC INCIDENT: The adversary at {ip} connected to decoy service '{service}' "
                    f"on Port {port} and executed an OS credential extraction payload: '{payload}'. "
@@ -87,6 +94,8 @@ def generate_single_event_ai_report(event):
         "attacker_ip": ip,
         "country": geo.get("country", "Unknown"),
         "city": geo.get("city", "Unknown"),
+        "geo_source": geo.get('geo_source', 'unknown'),
+        "geo_label": geo.get('geo_label', 'Location unavailable'),
         "flag": geo.get("flag", "🌐"),
         "lat": geo.get("lat"),
         "lng": geo.get("lng"),
@@ -120,7 +129,14 @@ def generate_ai_threat_summary(attacker_ip, logs, attacker_profile):
     max_risk = max((l['risk_score'] for l in logs), default=0)
 
     # Classify Intent
-    if "T1078" in mitre_ids or "HONEYTOKEN" in services_hit:
+    if services_hit == ['DOCUMENT_DECOY']:
+        intent = 'Decoy document interactions'
+        summary = (f'{total_events} document interaction observations recorded for {attacker_ip}. '
+                   'Review the event payloads to distinguish file reads from submitted acknowledgements. '
+                   'These observations do not establish a backdoor or computer compromise.')
+        threat_level = 'MEDIUM' if max_risk >= 40 else 'LOW'
+        remediations = ['Correlate document session identifiers with SSH events.']
+    elif "T1078" in mitre_ids or "HONEYTOKEN" in services_hit:
         intent = "Targeted Credential Exploitation / Exfiltration"
         summary = (f"CRITICAL INCIDENT: Attacker from {attacker_ip} triggered a high-value Honeytoken (Decoy Credential/URL). "
                    f"This indicates active lateral movement or post-reconnaissance access attempt using decoy tokens.")

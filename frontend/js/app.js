@@ -98,13 +98,13 @@ function toggleTheme() {
 function initLeafletMap() {
     const container1 = document.getElementById('attackerWorldMap');
     if (container1) {
-        leafMap = L.map('attackerWorldMap', { zoomControl: true, attributionControl: false }).setView([20, 0], 2);
+        leafMap = L.map('attackerWorldMap', { zoomControl: true, attributionControl: true }).setView([20, 0], 2);
         mapMarkersLayer = L.layerGroup().addTo(leafMap);
     }
 
     const container2 = document.getElementById('threatsWorldMap');
     if (container2) {
-        threatsMap = L.map('threatsWorldMap', { zoomControl: true, attributionControl: false }).setView([20, 0], 2);
+        threatsMap = L.map('threatsWorldMap', { zoomControl: true, attributionControl: true }).setView([20, 0], 2);
         threatsMarkersLayer = L.layerGroup().addTo(threatsMap);
     }
 
@@ -116,10 +116,13 @@ function updateMapTiles(theme) {
     const isDark = theme === 'dark';
     const tileUrl = isDark
         ? 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'
-        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-    const tileOptions = isDark
-        ? { maxZoom: 16, attribution: '&copy; ESRI' }
-        : { maxZoom: 19, subdomains: ['a', 'b', 'c'], attribution: '&copy; OpenStreetMap' };
+        : 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}';
+    const tileOptions = {
+        maxZoom: 16,
+        // Identify tile requests without sending the dashboard path or query string.
+        referrerPolicy: 'strict-origin-when-cross-origin',
+        attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>, and the GIS user community'
+    };
 
     if (leafMap) {
         if (tileLayer1) leafMap.removeLayer(tileLayer1);
@@ -136,21 +139,30 @@ function updateMapMarkers(attackers) {
     if (mapMarkersLayer) mapMarkersLayer.clearLayers();
     if (threatsMarkersLayer) threatsMarkersLayer.clearLayers();
 
-    if (!attackers || attackers.length === 0) return;
+    attackers = attackers || [];
+    const mapped = attackers.filter(a => Number.isFinite(a.lat) && Number.isFinite(a.lng) && Math.abs(a.lat) <= 90 && Math.abs(a.lng) <= 180);
+    const labCount = mapped.filter(a => a.geo_source === 'configured_lab').length;
+    const summary = attackers.length
+        ? `${mapped.length} of ${attackers.length} loaded profiles mapped. ${labCount} use a configured lab location; ${attackers.length - mapped.length} have no location. Lab markers do not represent measured attacker locations.`
+        : 'Awaiting events. Private LAN events use the configured lab location.';
+    for (const id of ['attackerMapStatus', 'threatsMapStatus']) {
+        const element = document.getElementById(id);
+        if (element) element.textContent = summary;
+    }
 
-    attackers.forEach(a => {
-        if (!Number.isFinite(a.lat) || !Number.isFinite(a.lng)) return;
+    mapped.forEach(a => {
         const lat = a.lat;
         const lng = a.lng;
         const flag = a.flag || "🌐";
         const country = a.country || "Unknown Origin";
-        const score = a.max_risk_score || 50;
+        const score = a.max_risk_score ?? 50;
 
         const circleColor = score >= 75 ? '#ef4444' : (score >= 50 ? '#f59e0b' : '#3b82f6');
 
         const popupHTML = `
             <div style="font-family: sans-serif; padding: 4px;">
-                <h4 style="margin: 0 0 4px 0; font-size: 13px;">${escapeHTML(flag)} ${escapeHTML(country)}</h4>
+                <h4 style="margin: 0 0 4px 0; font-size: 13px;">${escapeHTML(flag)} ${escapeHTML(a.city || 'Unknown')}, ${escapeHTML(country)}</h4>
+                <p style="margin: 0 0 6px; font-size: 12px;"><b>${escapeHTML(a.geo_label || 'Location unavailable')}</b></p>
                 <p style="margin: 0; font-size: 11px; color: #64748b;"><b>IP:</b> <code style="color: #0070f3;">${a.ip}</code></p>
                 <p style="margin: 2px 0; font-size: 11px; color: #64748b;"><b>Attempts:</b> ${a.total_attempts} | <b>Risk Score:</b> <strong style="color:${circleColor}">${score}/100</strong></p>
                 <p style="margin: 4px 0 0 0;"><button onclick="inspectAIReport('${a.ip}')" style="background:#0070f3; color:#fff; border:none; padding:3px 8px; border-radius:4px; font-size:10px; cursor:pointer;">Rule-based Report</button></p>
@@ -167,6 +179,7 @@ function updateMapMarkers(attackers) {
                 fillOpacity: 0.7
             });
             marker1.bindPopup(popupHTML);
+            marker1.bindTooltip(`${escapeHTML(a.city || 'Unknown')} — ${escapeHTML(a.geo_label || 'Location unavailable')}`);
             mapMarkersLayer.addLayer(marker1);
         }
 
@@ -180,6 +193,7 @@ function updateMapMarkers(attackers) {
                 fillOpacity: 0.7
             });
             marker2.bindPopup(popupHTML);
+            marker2.bindTooltip(`${escapeHTML(a.city || 'Unknown')} — ${escapeHTML(a.geo_label || 'Location unavailable')}`);
             threatsMarkersLayer.addLayer(marker2);
         }
     });
@@ -189,6 +203,7 @@ let dashboardRefreshTimer = null;
 function initWebSocketConnection() {
     new TelemetryWebSocket((event) => {
         prependTelemetryRow(event);
+        if (event.decoy_service === 'DOCUMENT_DECOY') showDocumentAlert(event);
         if (!dashboardRefreshTimer) dashboardRefreshTimer = setTimeout(() => { dashboardRefreshTimer = null; fetchDashboardData(); }, 1000);
     }, (connected) => {
         if (connected) fetchDashboardData();
@@ -197,12 +212,13 @@ function initWebSocketConnection() {
 
 async function fetchDashboardData() {
     try {
-        const [statusRes, logsRes, attackersRes, mitreRes, honeytokensRes] = await Promise.all([
+        const [statusRes, logsRes, attackersRes, mitreRes, honeytokensRes, documentsRes] = await Promise.all([
             fetch("/api/status"),
             fetch(`/api/logs?limit=${document.getElementById("timeFilterSelect")?.value || 50}`),
             fetch("/api/attackers"),
             fetch("/api/mitre"),
-            fetch("/api/honeytokens")
+            fetch("/api/honeytokens"),
+            fetch('/api/document-events')
         ]);
 
         const status = await statusRes.json();
@@ -210,6 +226,9 @@ async function fetchDashboardData() {
         const attackers = await attackersRes.json();
         const mitre = await mitreRes.json();
         const honeytokens = await honeytokensRes.json();
+        renderDocumentEvents(await documentsRes.json());
+        const modeSelect = document.getElementById('engagementMode');
+        if (modeSelect && document.activeElement !== modeSelect) modeSelect.value = status.engagement_mode;
 
         // Update Stat Counters
         document.getElementById("statTotalAttacks").innerText = status.metrics.total_attacks_logged;
@@ -232,6 +251,39 @@ async function fetchDashboardData() {
 
     } catch (err) {
         console.error("[Aegis Cloud SIEM] Fetch error:", err);
+    }
+}
+
+function documentEventText(event) {
+    let details = {};
+    try { details = JSON.parse(event.payload || '{}'); } catch (_) { /* Retain event label if older payload differs. */ }
+    return `${event.attack_type}: ${details.file || 'document'} · Source ${event.attacker_ip} · Original session IP ${details.original_source_ip || 'unknown'}`;
+}
+
+function showDocumentAlert(event) {
+    const alert = document.getElementById('documentAlert');
+    const text = document.getElementById('documentAlertText');
+    if (alert && text) {
+        text.textContent = documentEventText(event);
+        alert.hidden = false;
+    }
+}
+
+function renderDocumentEvents(events) {
+    const container = document.getElementById('documentEvents');
+    if (!container) return;
+    container.innerHTML = events.length ? events.map(event => `<p style="font-size:12px">${escapeHTML(event.timestamp)} · ${escapeHTML(documentEventText(event))}</p>`).join('')
+        : '<p style="font-size:12px">No document interactions recorded yet.</p>';
+}
+
+async function setEngagementMode(mode) {
+    const status = document.getElementById('engagementStatus');
+    try {
+        await fetch('/api/engagement', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({mode})});
+        status.textContent = `${mode === 'observe' ? 'Observation enabled: automatic quarantine disabled.' : 'Containment enabled: high-risk sessions are blocked.'} Existing IP blocks remain active.`;
+    } catch (error) {
+        status.textContent = `Could not change mode: ${error.message}`;
+        fetchDashboardData();
     }
 }
 
@@ -337,11 +389,11 @@ function createTelemetryRowHTML(l, innerOnly = false) {
 
     const content = `
         <td class="font-mono" style="color: var(--text-muted); font-size: 11px;">${timestampStr}</td>
-        <td><span style="margin-right: 4px;">${escapeHTML(flag)}</span> ${escapeHTML(country)}</td>
+        <td><span style="margin-right: 4px;">${escapeHTML(flag)}</span> ${escapeHTML(country)}${l.geo_source === 'configured_lab' ? '<br><small>Configured lab location</small>' : ''}</td>
         <td class="font-mono" style="color: var(--accent-blue); font-weight: 600;">${l.attacker_ip}</td>
         <td><span class="widget-tag">${escapeHTML(l.decoy_service)}</span></td>
         <td class="font-mono" style="font-size: 11px;">${escapeHTML(payloadSnippet)}</td>
-        <td><span class="font-mono" style="color: var(--accent-amber); font-weight: bold;">${l.mitre_id || 'T1046'}</span> ${escapeHTML(l.mitre_name || '')}</td>
+        <td><span class="font-mono" style="color: var(--accent-amber); font-weight: bold;">${escapeHTML(l.mitre_id || '—')}</span> ${escapeHTML(l.mitre_name || '')}</td>
         <td><span class="sev-badge sev-${l.severity}">${l.severity}</span></td>
         <td>
             <button class="btn btn-sm btn-primary" style="font-size: 11px; font-weight: 600; padding: 2px 8px;" onclick="inspectEventAIReport(${l.id})">⚡ Rule-based Report</button>
@@ -375,7 +427,7 @@ function renderAttackersTable(attackers) {
         return `
             <tr>
                 <td class="font-mono" style="color: var(--accent-blue); font-weight: 600;">${a.ip}</td>
-                <td>${escapeHTML(flag)} ${escapeHTML(country)}</td>
+                <td>${escapeHTML(flag)} ${escapeHTML(country)}${a.geo_source === 'configured_lab' ? `<br><small>${escapeHTML(a.city)} · Configured lab location</small>` : ''}</td>
                 <td class="font-mono" style="font-size: 11px; color: var(--text-muted);">${(a.last_seen || '').replace('T', ' ').substring(0, 16)}</td>
                 <td class="font-mono" style="text-align: center;">${a.total_attempts}</td>
                 <td class="font-mono" style="color: ${a.max_risk_score >= 75 ? '#ef4444' : '#10b981'}; font-weight: bold;">${a.max_risk_score} / 100</td>
@@ -447,7 +499,7 @@ async function inspectEventAIReport(logId) {
                     <div style="font-weight: 700; color: var(--accent-blue); margin-top: 2px;">
                         <span style="margin-right: 4px;">${data.flag || '🌐'}</span> ${escapeHTML(data.attacker_ip)}
                     </div>
-                    <div style="font-size: 10px; color: var(--text-secondary); margin-top: 2px;">${escapeHTML(data.city || '')}, ${escapeHTML(data.country || 'Local Network')}</div>
+                    <div style="font-size: 10px; color: var(--text-secondary); margin-top: 2px;">${escapeHTML(data.city || '')}, ${escapeHTML(data.country || 'Local Network')} · ${escapeHTML(data.geo_label || 'Location unavailable')}</div>
                 </div>
 
                 <div style="background: var(--bg-subtle); padding: 10px; border-radius: 6px;">

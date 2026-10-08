@@ -30,7 +30,7 @@ DECOYS: Dict[str, Dict[str, Any]] = {
         "type": "Open Port",
         "port": 21,
         "enabled": True,
-        "description": "Monitors unencrypted File Transfer Protocol scan attempts"
+        "description": "Read-only FTP archive with directory navigation and active/passive downloads"
     },
     "port_23": {
         "id": "port_23",

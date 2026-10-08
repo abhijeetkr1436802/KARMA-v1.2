@@ -6,19 +6,17 @@ Developed by Abhijeet Kumar, Kanaka C, Raghunandan T V, and Sanjay Kashyap at Th
 
 ## Run locally
 
-Tested with Python 3.14 on Windows. Install the locked runtime dependencies in an isolated environment:
+Tested with Python 3.14 on Windows. Install the locked runtime dependencies into your Python installation:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python -m pip install --upgrade pip
-.\.venv\Scripts\python -m pip install -r requirements.txt
-.\.venv\Scripts\python run.py
+python -m pip install -r requirements.txt
+python run.py
 ```
 
 For a terminal server without Tkinter:
 
 ```powershell
-.\.venv\Scripts\python run.py --headless
+python run.py --headless
 ```
 
 Visit `http://localhost:8000`. On first startup a random admin token is saved to `%USERPROFILE%/.karma/admin-token`. Read that file locally and enter the token on the login page. Do not paste the token into chat or source control. Set `KARMA_ADMIN_TOKEN` to supply your own 32+ character random secret.
@@ -45,21 +43,123 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for TLS, service operation, backups, retentio
 ## Truthful analysis and privacy
 
 - Event/attacker reports and MITRE mappings are deterministic heuristics, not external AI verdicts.
-- IP locations remain unknown without a geolocation provider; private IPs are not assigned invented cities.
+- Private LAN/loopback addresses use Bengaluru, India as an explicitly **configured lab location**, not a measured attacker origin. Public addresses remain unknown without a geolocation provider. See `.env.example` to disable or change the lab marker.
 - Without `DEEPSEEK_API_KEY`, chat/email analysis falls back locally. The email heuristic does not certify a message as legitimate.
 - Configured email analysis sends headers and up to 2,500 characters of body text to DeepSeek. Chat sends the selected conversation history. Sending live SIEM context is opt-in in the dashboard.
 - Email `Authentication-Results` headers are untrusted input. SPF/DKIM is not independently verified. Outlook binary `.msg` is unsupported; export RFC822 `.eml` instead.
 - Captured SSH/web login passwords are redacted; arbitrary attack payloads can still contain sensitive data. Restrict access to the data directory and backups.
 - Generated API keys/credential honeytokens are decoy strings, not provider-managed keys. They do not detect use outside KARMA. Custom URL tokens are routed by the web sensor.
 
-## Checks
+## SSH and document demonstration
+
+Restart KARMA after updating dependencies with `python -m pip install -r requirements.txt`.
+KARMA uses the Python interpreter you launch it with; it does not switch environments. Missing dependencies are reported before opening the launcher, with an install command for that interpreter.
+In the dashboard's **Document decoy lab** panel choose **Observe** to prevent automatic
+quarantine from ending the demo. Existing blocks still apply: unblock your test IP
+in Attacker Profiles. The choice persists across restarts; switch back to **Contain**
+when the demonstration ends.
 
 ```powershell
-.\.venv\Scripts\python -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python -B -m unittest discover -s tests -v
+ssh root@192.168.137.1 -p 2222
+```
+
+The SSH sensor accepts synthetic credentials in observation mode. Type `help` to see
+the emulated commands, then try `ls -la`, `cd /srv/company`, `pwd`, and `cat contacts.csv`.
+Each connection has an isolated in-memory filesystem. It supports common file and
+discovery commands, not a full Linux shell: pipelines, redirection, program execution,
+outbound connections and installation commands are unsupported. Nothing executes on
+the host. Sessions have a 15-minute lifetime and 120-second idle timeout, with at most
+128 virtual file/directory entries, 2 MiB of copied content, and 32 open SFTP handles.
+The terminal supports Up/Down command history, Backspace, Ctrl+C to cancel input,
+and Ctrl+D to log out. CRLF input is treated as one Enter key. Password entry allows
+up to 120 seconds. Unknown commands remain simulated errors; no host shell is invoked.
+
+If SSH reports `kex_exchange_identification: read: Connection reset`, check Attacker
+Profiles for a block on the connecting address. A quarantined connection is rejected
+before SSH negotiation. The server log now names the blocked address and listener.
+For an approved interactive lab, choose Observe and unblock that specific test address.
+Changing mode alone does not remove existing blocks.
+
+Download actual synthetic reports from another terminal:
+
+```powershell
+sftp -P 2222 root@192.168.137.1
+# At the sftp prompt:
+get /root/company_data_2026.pdf
+get /root/company_financials_25-26.xlsx
+bye
+```
+
+The dashboard records **Decoy file read started** when the first bytes are requested.
+Open the PDF or workbook, follow **Open document acknowledgement page**, then click
+**Confirm document interaction**. A dashboard popup and retained event show the
+document, callback connection IP, original SSH connection IP, and session identifier.
+Opening the file alone sends no signal. The reports contain no macros, executable
+payloads or backdoors; a confirmation does not prove device compromise or identify a
+person. Link preview GET requests do not count as confirmations. Each explicit POST
+is a separate observation; scanners could submit forms too.
+
+Links use the SSH connection's local IP and port 8080 by default. For this LAN you can
+set `$env:KARMA_CALLBACK_BASE_URL="http://192.168.137.1:8080"` before launch. The web
+sensor must be enabled and reachable from the reader's machine. Links expire after
+seven days; the newest 10,000 document tokens are retained. Clearing telemetry revokes
+all document links. The committed PDF/XLSX are templates with inactive placeholder
+links; obtain personalized copies through SFTP for the demonstration.
+
+For a changed SSH host-key warning, compare the reported fingerprint with the saved
+server key before removing the specific cached entry:
+
+```powershell
+ssh-keygen -lf "$env:USERPROFILE/.karma/ssh_host_rsa_key"
+# Only after the fingerprints match:
+ssh-keygen -R "[192.168.137.1]:2222"
+```
+
+Keep the per-installation `ssh_host_rsa_key` across restarts and upgrades. Never turn
+off strict host-key checking to hide a mismatch.
+
+## Checks
+
+### FTP archive (port 21)
+
+Restart the server after updating to replace the old banner-only FTP listener.
+Windows `ftp` uses active data connections; allow the FTP client through its local
+firewall for listings/downloads. Passive clients use an ephemeral data port on the
+server; those ports must be reachable on the lab network. SFTP on 2222 needs no
+separate data connection and is preferable across restrictive firewalls/NAT.
+
+```text
+ftp 192.168.137.1
+Admin
+<any dummy password>
+pwd
+dir
+ls
+cd reports
+binary
+get company_data_2026.pdf
+cd ../finance
+get company_financials_25-26.xlsx
+cd ..
+get README.txt
+bye
+```
+
+FTP starts in `/srv/company`, with `finance`, `reports`, `operations`, and `archive`
+directories and synthetic text/CSV records. `PWD`/`XPWD`, `CWD`/`CDUP`, `LIST`/`NLST`,
+`RETR`, `SIZE`, `MDTM`, `TYPE`, `PORT`/`EPRT`, `PASV`/`EPSV`, `SYST`, `FEAT`, `NOOP`,
+and `HELP` are supported. Uploads and mutations are rejected: this is a read-only
+virtual archive. Active data endpoints must match the control connection's source
+IP and use an unprivileged port. FTP passwords are redacted from telemetry.
+
+## Regression checks
+
+```powershell
+python -m pip install -r requirements-dev.txt
+python -B -m unittest discover -s tests -v
 node tests/frontend.test.cjs
-.\.venv\Scripts\python -m pip check
-.\.venv\Scripts\python -m pip_audit --local
+python -m pip check
+python -m pip_audit --local
 ```
 
 Tests use temporary databases and loopback ephemeral ports. They do not contact DeepSeek, change firewall rules, or alter existing telemetry. The Python lockfile records the tested dependency closure; `requirements.in` lists upgrade inputs. Refresh dependencies in a clean environment, rerun checks and audit, then update the lockfile. CI runs regression checks on Windows and Linux.

@@ -77,6 +77,7 @@ async def lifespan(app):
         app.state.admin_token = load_admin_token()
         await run_in_threadpool(db.init_db)
         await run_in_threadpool(initialize_decoys)
+        await run_in_threadpool(active_defense_engine.load_mode)
         manager.loop = asyncio.get_running_loop()
         audit_csv_logger.start()
         try:
@@ -163,6 +164,7 @@ def status():
         return {"platform": "KARMA SIEM", "status": "DEGRADED" if audit_csv_logger.last_error or any(d["status"] == "ERROR" for d in decoys) else "ONLINE",
                 "active_honeypots": decoys, "containment_scope": "KARMA sensors only; no host firewall changes",
                 "telemetry_dropped": manager.dropped, "audit_error": audit_csv_logger.last_error,
+                "engagement_mode": "contain" if active_defense_engine.auto_quarantine_enabled else "observe",
                 "metrics": {"total_attacks_logged": total, "web_events": web_count, "network_events": total-web_count,
                             "unique_attackers": conn.execute("SELECT COUNT(*) FROM attackers").fetchone()[0],
                             "quarantined_ips": len(db.get_quarantine_list()), "active_honeytokens": len(db.get_honeytokens()),
@@ -176,9 +178,28 @@ def logs(limit: int = Query(50, ge=1, le=1000)):
     return db.get_recent_logs(limit)
 
 
+class EngagementRequest(BaseModel):
+    mode: Literal['observe', 'contain']
+
+
+@app.post('/api/engagement')
+def engagement(req: EngagementRequest):
+    active_defense_engine.set_mode(req.mode)
+    return {'mode':req.mode}
+
+
 @app.get("/api/attackers")
 def attackers(limit: int = Query(1000, ge=1, le=1000), offset: int = Query(0, ge=0)):
     return db.get_attackers_list(limit, offset)
+
+
+@app.get('/api/document-events')
+def document_events():
+    conn = db.get_db()
+    try:
+        return [db.with_location(row) for row in conn.execute("SELECT * FROM attack_logs WHERE decoy_service='DOCUMENT_DECOY' ORDER BY id DESC LIMIT 20")]
+    finally:
+        conn.close()
 
 
 @app.get("/api/mitre")

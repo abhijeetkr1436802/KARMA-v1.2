@@ -60,6 +60,24 @@ class SystemTests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/reset", headers={**self.auth, "Origin": "https://evil.example"}).status_code, 403)
         self.assertEqual(self.client.get("/api/logs", headers={**self.auth, "Host": "evil.example"}).status_code, 400)
 
+    def test_browser_login_preserves_origin_and_rejects_cross_origin(self):
+        page = self.client.get("/login")
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.headers["referrer-policy"], "same-origin")
+        response = self.client.post(
+            "/login", data={"token": TOKEN},
+            headers={"Origin": "http://testserver"}, follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.client.get("/api/logs").status_code, 200)
+        for origin in ("null", "https://evil.example", "http://testserver:9999"):
+            with self.subTest(origin=origin):
+                response = self.client.post(
+                    "/login", data={"token": TOKEN},
+                    headers={"Origin": origin}, follow_redirects=False,
+                )
+                self.assertEqual(response.status_code, 403)
+
     def test_validation_and_upload_bounds(self):
         self.assertEqual(self.client.get("/api/logs?limit=-1", headers=self.auth).status_code, 422)
         self.assertEqual(self.client.post("/api/quarantine/toggle", headers=self.auth, json={"ip":"not-an-ip", "action":"BLOCK"}).status_code, 422)
@@ -142,6 +160,29 @@ class SystemTests(unittest.TestCase):
         self.assertIsNone(db.get_geo_info("8.8.8.8")["lat"])
         self.assertEqual(map_payload_to_mitre("RAW_DECOY", "command_execution", "whoami")["mitre_id"], "T1059")
         self.assertEqual(map_payload_to_mitre("SSH_HONEYPOT", "port_scan", "probe")["mitre_id"], "T1046")
+
+    def test_lab_location_is_explicit_and_updates_historical_profiles(self):
+        with patch.object(config, "LAB_LOCATION_ENABLED", False):
+            event_id = self.event("192.168.137.1")
+            self.assertIsNone(db.get_event(event_id)["lat"])
+        with patch.object(config, "LAB_LOCATION_ENABLED", True):
+            for row in (db.get_event(event_id), db.get_recent_logs()[0], db.get_attackers_list()[0]):
+                self.assertEqual(row["city"], "Bengaluru")
+                self.assertEqual(row["geo_source"], "configured_lab")
+                self.assertEqual(row["geo_label"], "Configured lab location")
+                self.assertAlmostEqual(row["lat"], 12.9716)
+                self.assertAlmostEqual(row["lng"], 77.5946)
+            from backend.app import manager
+            manager.sync_broadcast({'id':event_id})
+            import csv
+            with open(audit_csv_logger.file_path,encoding='utf-8',newline='') as file:
+                exported = list(csv.DictReader(file))[-1]
+            self.assertEqual(exported['Location_Source'],'configured_lab')
+            self.assertEqual(exported['Location_Label'],'Configured lab location')
+            for address in ("10.0.0.2", "172.16.0.1", "::1", "fd00::1", "::ffff:192.168.1.1"):
+                self.assertEqual(db.get_geo_info(address)["geo_source"], "configured_lab")
+            for address in ("8.8.8.8", "192.0.2.1", "203.0.113.5", "0.0.0.0", "224.0.0.1", "bad"):
+                self.assertIsNone(db.get_geo_info(address)["lat"], address)
 
     def test_sensor_manager_toggle_and_failed_bind(self):
         from backend.sensors.manager import SensorManager
@@ -240,6 +281,130 @@ class SystemTests(unittest.TestCase):
         conn.close()
         db.init_db()
         self.assertIsNotNone(db.get_event(self.event())["flag"])
+
+    def test_engagement_mode_persists_and_respects_manual_blocks(self):
+        from backend.engine.active_defense import active_defense_engine
+        self.assertEqual(self.client.post('/api/engagement', json={'mode':'observe'}).status_code,401)
+        self.assertEqual(self.client.post('/api/engagement', headers=self.auth, json={'mode':'invalid'}).status_code,422)
+        self.assertEqual(self.client.post('/api/engagement', headers=self.auth, json={'mode':'observe'}).status_code,200)
+        active_defense_engine.load_mode()
+        decoy_state.initialize_decoys()
+        self.assertFalse(active_defense_engine.process_event('192.168.1.2',100,'test')[0])
+        self.assertEqual(self.client.get('/api/status',headers=self.auth).json()['engagement_mode'],'observe')
+        active_defense_engine.manual_quarantine('192.168.1.2')
+        self.assertTrue(db.is_quarantined('192.168.1.2'))
+        self.client.post('/api/engagement',headers=self.auth,json={'mode':'contain'})
+        self.assertTrue(active_defense_engine.process_event('192.168.1.3',100,'test')[0])
+
+    def test_virtual_shell_has_no_host_files_or_execution(self):
+        from backend.sensors.virtual_shell import VirtualShell
+        first = VirtualShell('192.168.1.2','192.168.137.1')
+        second = VirtualShell('192.168.1.2','192.168.137.1')
+        self.assertIn('company_data_2026.pdf',first.execute('ls -la')[0])
+        self.assertEqual(first.execute('cd /srv/company')[1],0)
+        self.assertEqual(first.execute('pwd')[0],'/srv/company\n')
+        self.assertEqual(first.execute('touch test.txt')[1],0)
+        self.assertNotEqual(second.execute('cat /srv/company/test.txt')[1],0)
+        self.assertNotEqual(first.execute('cat ../../../../Windows/win.ini')[1],0)
+        self.assertNotEqual(first.execute('python -c "import os"')[1],0)
+        self.assertNotEqual(first.execute('echo x > /tmp/test')[1],0)
+        self.assertNotEqual(first.execute('ls; whoami')[1],0)
+        self.assertNotEqual(first.execute('A'*8193)[1],0)
+        for i in range(140): first.execute(f'touch /tmp/f{i}')
+        self.assertIn('quota',first.execute('touch /tmp/overflow')[0])
+
+    def test_document_confirmation_is_explicit_expiring_and_correlated(self):
+        import io
+        import zipfile
+        from pypdf import PdfReader
+        from backend import documents
+        from backend.sensors.web_honeypot import web_decoy_app
+        content = documents.issue_document(documents.FILES[0],'192.168.1.2','session-a','http://192.168.137.1:8080')
+        reader = PdfReader(io.BytesIO(content))
+        action = reader.pages[0]['/Annots'][0].get_object()['/A']
+        self.assertEqual(action['/S'],'/URI')
+        self.assertNotIn('/OpenAction',reader.trailer['/Root'])
+        token = str(action['/URI']).rsplit('/',1)[-1]
+        self.assertEqual(documents.lookup_document(token)['session_id'],'session-a')
+        workbook = documents.personalize(documents.FILES[1],str(action['/URI']))
+        with zipfile.ZipFile(io.BytesIO(workbook)) as z:
+            self.assertIn(token.encode(),z.read('xl/worksheets/_rels/sheet1.xml.rels'))
+            self.assertFalse(any('vbaProject' in n or 'externalLinks/' in n or 'connections.xml' in n for n in z.namelist()))
+            self.assertNotIn(b'HYPERLINK is not implemented',z.read('xl/worksheets/sheet1.xml'))
+        for invalid in ('file:///etc/passwd','http://user:password@example.com','http://example.com:99999','http://example.com/path'):
+            with patch.object(config,'CALLBACK_BASE_URL',invalid), self.assertRaises(ValueError):
+                documents.callback_base('127.0.0.1')
+        with TestClient(web_decoy_app,client=('192.168.1.3',1234)) as web:
+            self.assertEqual(web.get('/documents/'+token).status_code,200)
+            self.assertEqual(db.get_total_attack_count(),0)
+            self.assertEqual(web.post('/documents/'+token,data={'acknowledgement':'no'}).status_code,400)
+            self.assertEqual(db.get_total_attack_count(),0)
+            self.assertEqual(web.post('/documents/'+token,data={'acknowledgement':'confirm'}).status_code,200)
+            event = self.client.get('/api/document-events',headers=self.auth).json()[0]
+            self.assertEqual(event['attack_type'],'Document interaction confirmed')
+            self.assertEqual(event['attacker_ip'],'192.168.1.3')
+            self.assertIn('192.168.1.2',event['payload'])
+            self.assertIn('session-a',event['payload'])
+            self.assertEqual(web.get('/documents/'+'x'*43).status_code,404)
+            with patch.object(documents.time,'time',return_value=10**12):
+                self.assertEqual(web.get('/documents/'+token).status_code,404)
+
+    def test_sftp_downloads_and_ssh_exec_are_isolated(self):
+        import io
+        import paramiko
+        from pypdf import PdfReader
+        from backend.sensors import ssh_honeypot
+        self.client.post('/api/engagement',headers=self.auth,json={'mode':'observe'})
+        keypath = Path(self.temp.name) / 'sftp-host-key'
+        with patch.object(ssh_honeypot,'KEY_FILE',str(keypath)),patch.object(ssh_honeypot,'DATA_DIR',Path(self.temp.name)):
+            server = ssh_honeypot.SSHHoneypotServer(host='127.0.0.1',port=0)
+            server.start()
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            try:
+                port = server.server_socket.getsockname()[1]
+                client.connect('127.0.0.1',port=port,username='root',password='fake',look_for_keys=False,allow_agent=False,timeout=5)
+                with client.open_sftp() as sftp:
+                    sftp.get_channel().settimeout(5)
+                    self.assertIn('company_data_2026.pdf',sftp.listdir('/root'))
+                    with sftp.open('/root/company_data_2026.pdf','rb') as f:
+                        content = f.read()
+                    self.assertEqual(len(PdfReader(io.BytesIO(content)).pages),1)
+                    self.assertEqual(len([e for e in db.get_recent_logs() if e['decoy_service']=='DOCUMENT_DECOY']),1)
+                    with self.assertRaises(OSError): sftp.open('/tmp/upload','wb')
+                    with self.assertRaises(OSError): sftp.open('/root/../../Windows/win.ini','rb')
+                    db.add_to_quarantine('127.0.0.1','manual test',100)
+                    with self.assertRaises(OSError): sftp.open('/root/company_data_2026.pdf','rb')
+                client.close()
+                db.remove_from_quarantine('127.0.0.1')
+                client.connect('127.0.0.1',port=port,username='root',password='fake',look_for_keys=False,allow_agent=False,timeout=5)
+                _,out,_ = client.exec_command('ls /srv/company',timeout=5)
+                self.assertIn(b'company_financials_25-26.xlsx',out.read())
+                self.assertEqual(out.channel.recv_exit_status(),0)
+                client.close()
+                client.connect('127.0.0.1',port=port,username='root',password='fake',look_for_keys=False,allow_agent=False,timeout=5)
+                channel = client.invoke_shell()
+                channel.settimeout(5)
+                def read_prompt():
+                    response = b''
+                    while not response.endswith(b'# '):
+                        chunk = channel.recv(4096)
+                        if not chunk:
+                            self.fail('SSH session closed before the prompt')
+                        response += chunk
+                    return response
+                self.assertIn(b'Welcome',read_prompt())
+                channel.sendall(b'cd /srv/company\r\n')
+                self.assertIn(b'/srv/company# ',read_prompt())
+                channel.sendall(b'pwd\r')
+                self.assertIn(b'\r\n/srv/company\r\n',read_prompt())
+                channel.sendall(b'\x1b[A\r')
+                self.assertIn(b'\r\n/srv/company\r\n',read_prompt())
+                channel.sendall(b'\x04')
+                self.assertEqual(channel.recv_exit_status(),0)
+            finally:
+                client.close()
+                server.stop()
 
     def test_ai_fallback_never_contacts_provider_without_key(self):
         from backend.engine import ai_chat, phishing_analyzer

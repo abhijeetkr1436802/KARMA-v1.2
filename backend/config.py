@@ -1,4 +1,5 @@
 import os
+import math
 from pathlib import Path
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -11,6 +12,19 @@ PRODUCTION = os.environ.get("KARMA_ENV", "development") == "production"
 COOKIE_SECURE = PRODUCTION or os.environ.get("KARMA_COOKIE_SECURE") == "1"
 ALLOWED_HOSTS = os.environ.get("KARMA_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]").split(",")
 ENABLE_SENSORS = os.environ.get("KARMA_ENABLE_SENSORS", "1") == "1"
+# An operator-selected lab marker, never an inferred attacker location.
+LAB_LOCATION_ENABLED = os.environ.get("KARMA_LAB_LOCATION_ENABLED", "1") == "1"
+LAB_CITY = os.environ.get("KARMA_LAB_CITY", "Bengaluru")
+LAB_COUNTRY = os.environ.get("KARMA_LAB_COUNTRY", "India")
+LAB_LAT = float(os.environ.get("KARMA_LAB_LAT", "12.9716"))
+LAB_LNG = float(os.environ.get("KARMA_LAB_LNG", "77.5946"))
+CALLBACK_BASE_URL = os.environ.get("KARMA_CALLBACK_BASE_URL", "")
+ENGAGEMENT_MODE = os.environ.get("KARMA_ENGAGEMENT_MODE", "contain")
+if ENGAGEMENT_MODE not in ("observe", "contain"):
+    raise ValueError("KARMA_ENGAGEMENT_MODE must be observe or contain")
+if not (math.isfinite(LAB_LAT) and -90 <= LAB_LAT <= 90 and
+        math.isfinite(LAB_LNG) and -180 <= LAB_LNG <= 180):
+    raise ValueError("Lab latitude/longitude must be finite and within geographic bounds")
 MAX_BODY_BYTES = 2 * 1024 * 1024
 MAX_CLIENTS = 64
 MAX_EVENTS = int(os.environ.get("KARMA_MAX_EVENTS", "100000"))
