@@ -78,7 +78,15 @@ async def lifespan(app):
         await run_in_threadpool(db.init_db)
         await run_in_threadpool(initialize_decoys)
         await run_in_threadpool(active_defense_engine.load_mode)
-        manager.loop = asyncio.get_running_loop()
+        loop = manager.loop = asyncio.get_running_loop()
+        # Windows ProactorEventLoop logs a traceback whenever a client (browser,
+        # scanner, attacker) drops a TCP connection. Harmless on a honeypot, so
+        # swallow just that; everything else uses asyncio's default handler.
+        def _ignore_reset(loop, context):
+            if isinstance(context.get("exception"), ConnectionResetError):
+                return
+            loop.default_exception_handler(context)
+        loop.set_exception_handler(_ignore_reset)
         audit_csv_logger.start()
         try:
             if config.ENABLE_SENSORS:
@@ -129,6 +137,11 @@ def logout():
 @app.get("/")
 def root():
     return FileResponse(FRONTEND_DIR / "index.html")
+
+
+@app.get("/visualizer")
+def visualizer():
+    return FileResponse(FRONTEND_DIR / "visualizer.html")
 
 
 class QuarantineRequest(BaseModel):
@@ -347,6 +360,17 @@ async def phishing(file: UploadFile = File(...)):
         return await run_ai(parse_and_analyze_eml, content, file.filename)
     finally:
         await file.close()
+
+
+class PhishingTextRequest(BaseModel):
+    source: str = Field(min_length=1, max_length=200000)
+
+
+@app.post("/api/tools/phishing-text")
+async def phishing_text(req: PhishingTextRequest):
+    # Paste the raw email (Gmail "Show original" / Outlook "View source") or just the visible text.
+    from backend.engine.phishing_analyzer import parse_and_analyze_eml
+    return await run_ai(parse_and_analyze_eml, req.source.encode("utf-8", "replace"), "pasted-email.eml")
 
 
 class AIChatMessage(BaseModel):

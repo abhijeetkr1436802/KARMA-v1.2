@@ -74,36 +74,16 @@ class RawDecoyServer:
 
             # INTERACTIVE TELNET DECOY (PORT 23)
             elif port == 23:
-                client_sock.sendall(b"\r\nUbuntu 22.04 LTS aegis-gateway\r\naegis-gateway login: ")
-                while self.running and not is_quarantined(client_ip):
-                    data = client_sock.recv(1024)
-                    if not data:
-                        break
-                    cmd_str = data.decode('utf-8', errors='ignore').strip()
-                    if not cmd_str:
-                        continue
+                self._handle_telnet(client_sock, client_ip, port)
 
-                    payload_info = f"Telnet Executed Input: '{cmd_str}'"
-                    self._log_and_broadcast(client_ip, port, "TELNET_HONEYPOT", "Telnet Probe / Command", payload_info, "T1059")
+            # RDP DECOY (PORT 3389)
+            elif port == 3389:
+                self._handle_rdp(client_sock, client_ip, port)
 
-                    if "whoami" in cmd_str.lower():
-                        client_sock.sendall(b"root\r\naegis-gateway:~# ")
-                    elif "id" in cmd_str.lower():
-                        client_sock.sendall(b"uid=0(root) gid=0(root) groups=0(root)\r\naegis-gateway:~# ")
-                    elif "passwd" in cmd_str.lower() or "shadow" in cmd_str.lower():
-                        client_sock.sendall(b"root:x:0:0:root:/root:/bin/bash\r\naegis-gateway:~# ")
-                    elif cmd_str.lower() in ["exit", "quit"]:
-                        break
-                    else:
-                        client_sock.sendall(b"Login incorrect\r\naegis-gateway login: ")
-
-            # RDP & OTHER DECOY PORTS (PORT 3389)
+            # OTHER / CUSTOM TCP DECOY PORTS
             else:
                 payload_info = f"Port Scan Probe on Decoy Port {port}"
                 self._log_and_broadcast(client_ip, port, f"DECOY_PORT_{port}", "Network Service Discovery / Scan", payload_info, "T1046")
-                if port == 3389:
-                    # Send RDP X.224 Confirm simulation
-                    client_sock.sendall(b"\x03\x00\x00\x0b\x06\xd0\x00\x00\x12\x34\x00")
 
             client_sock.close()
         except Exception:
@@ -111,6 +91,88 @@ class RawDecoyServer:
                 client_sock.close()
             except Exception:
                 pass
+
+    @staticmethod
+    def _strip_telnet(data):
+        # Drop Telnet IAC negotiation (0xFF ...) so it is not logged as "input".
+        out = bytearray()
+        i = 0
+        while i < len(data):
+            if data[i] == 255:  # IAC
+                if i + 1 < len(data) and data[i + 1] == 250:  # SB ... SE
+                    end = data.find(240, i)  # SE
+                    i = end + 1 if end != -1 else len(data)
+                else:
+                    i += 3  # IAC + command + option
+                continue
+            out.append(data[i])
+            i += 1
+        return out
+
+    def _handle_telnet(self, client_sock, client_ip, port):
+        self._log_and_broadcast(client_ip, port, "TELNET_HONEYPOT",
+                                "Telnet connection / service discovery",
+                                "TCP connection to Telnet service", "T1046")
+        # Suppress Go-Ahead only; let the client keep local echo so the typed
+        # username is visible (we never claim ECHO, which would blank their input).
+        client_sock.sendall(b"\xff\xfb\x03")  # IAC WILL SGA
+        client_sock.sendall(b"\r\nUbuntu 22.04 LTS aegis-gateway\r\naegis-gateway login: ")
+        buf = bytearray()
+        username = None
+        attempts = 0
+        deadline = time.monotonic() + 300
+        while self.running and not is_quarantined(client_ip) and attempts < 30 and time.monotonic() < deadline:
+            try:
+                data = client_sock.recv(1024)
+            except socket.timeout:
+                continue
+            if not data:
+                break
+            buf += self._strip_telnet(data)
+            # Process each completed line (terminated by CR or LF).
+            while True:
+                nl = -1
+                for mark in (b"\n", b"\r"):
+                    pos = buf.find(mark)
+                    if pos != -1 and (nl == -1 or pos < nl):
+                        nl = pos
+                if nl == -1:
+                    break
+                line = bytes(buf[:nl]).decode("utf-8", "ignore").strip("\x00 \t")
+                del buf[:nl + 1]
+                if not line:
+                    continue
+                if username is None:
+                    username = line[:64]
+                    client_sock.sendall(b"Password: ")
+                else:
+                    attempts += 1
+                    payload = f"Telnet login attempt: USER '{username}' / PASS '[redacted]'"
+                    self._log_and_broadcast(client_ip, port, "TELNET_HONEYPOT",
+                                            "Telnet Credential Brute-Force", payload, "T1110")
+                    username = None
+                    client_sock.sendall(b"\r\nLogin incorrect\r\naegis-gateway login: ")
+
+    def _handle_rdp(self, client_sock, client_ip, port):
+        # Real RDP clients send an X.224 Connection Request first; it often carries
+        # the Windows username as  Cookie: mstshash=<user>. Capture that, then reply.
+        cookie_user = None
+        try:
+            data = client_sock.recv(2048)
+        except socket.timeout:
+            data = b""
+        if data:
+            text = data.decode("latin-1", "ignore")
+            marker = "mstshash="
+            if marker in text:
+                cookie_user = text.split(marker, 1)[1].split("\r")[0].split("\n")[0][:64]
+        detail = f"RDP connection attempt (cookie user '{cookie_user}')" if cookie_user else "RDP connection attempt / scan"
+        self._log_and_broadcast(client_ip, port, "RDP_HONEYPOT", "Remote Desktop Access Attempt", detail, "T1021")
+        try:
+            # X.224 Connection Confirm, then refuse (no real RDP stack behind it).
+            client_sock.sendall(b"\x03\x00\x00\x0b\x06\xd0\x00\x00\x12\x34\x00")
+        except OSError:
+            pass
 
     def _log_and_broadcast(self, client_ip, port, service_name, attack_type, payload_info, default_mitre):
         mitre = map_payload_to_mitre("RAW_DECOY", "command_execution" if default_mitre == "T1059" else "port_scan", payload_info)

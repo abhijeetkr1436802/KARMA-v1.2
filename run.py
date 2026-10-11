@@ -32,6 +32,8 @@ def main():
     args = parser.parse_args()
     check_dependencies()
     from backend import config
+    if config.TLS_ENABLED and not args.certfile:
+        args.certfile, args.keyfile = str(config.TLS_CERT), str(config.TLS_KEY)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     if config.PRODUCTION and not (args.certfile and args.keyfile):
         parser.error("Production requires --headless, --certfile and --keyfile")
@@ -39,8 +41,8 @@ def main():
         parser.error("Use --headless in production")
     if args.headless:
         import uvicorn
-        logging.info("Management login at %s://%s:%s; local token file: %s",
-                     "https" if args.certfile else "http", config.HOST, config.PORT_API, config.ADMIN_TOKEN_FILE)
+        logging.info("Management login at %s (visualizer: %s/visualizer); local token file: %s",
+                     config.DASHBOARD_URL, config.DASHBOARD_URL, config.ADMIN_TOKEN_FILE)
         uvicorn.run("backend.app:app", host=config.HOST, port=config.PORT_API,
                     proxy_headers=False, workers=1, limit_concurrency=128,
                     timeout_keep_alive=5, timeout_graceful_shutdown=15,

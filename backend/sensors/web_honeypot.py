@@ -193,7 +193,7 @@ HTML_TEMPLATE = """
 </html>
 """
 
-def process_web_attack(client_ip, path, method, payload):
+def process_web_attack(client_ip, path, method, payload, agent=""):
     from backend.decoy_state import is_decoy_enabled
     if not is_decoy_enabled("web_8080"):
         return
@@ -219,7 +219,7 @@ def process_web_attack(client_ip, path, method, payload):
         port=PORT_WEB_HONEYPOT,
         decoy_service="WEB_HONEYPOT",
         attack_type=attack_type,
-        payload=f"[{method}] Path: {path} | Data: {payload}",
+        payload=f"[{method}] Path: {path} | Data: {payload}" + (f" | UA: {agent[:200]}" if agent else ""),
         mitre_id=mitre['mitre_id'],
         mitre_name=mitre['mitre_name'],
         mitre_tactic=mitre['mitre_tactic'],
@@ -258,20 +258,20 @@ def process_web_attack(client_ip, path, method, payload):
 @web_decoy_app.get("/", response_class=HTMLResponse)
 def get_login(request: Request):
     client_ip = request.client.host if request.client else "127.0.0.1"
-    process_web_attack(client_ip, request.url.path, "GET", str(request.query_params))
+    process_web_attack(client_ip, request.url.path, "GET", str(request.query_params), request.headers.get("user-agent", ""))
     return HTML_TEMPLATE
 
 @web_decoy_app.get("/secret-vault-admin-login-php", response_class=HTMLResponse)
 def get_honeytoken(request: Request):
     client_ip = request.client.host if request.client else "127.0.0.1"
-    process_web_attack(client_ip, request.url.path, "GET", "Honeytoken URL Triggered")
+    process_web_attack(client_ip, request.url.path, "GET", "Honeytoken URL Triggered", request.headers.get("user-agent", ""))
     return "<h1 style='color:red; font-family:sans-serif; text-align:center;'>403 Access Denied - Security Alert Triggered</h1>"
 
 @web_decoy_app.post("/login")
 def post_login(request: Request, username: str = Form(...), password: str = Form(...)):
     client_ip = request.client.host if request.client else "127.0.0.1"
     payload = f"user={username[:2048]} & pass=[redacted]"
-    process_web_attack(client_ip, "/login", "POST", payload)
+    process_web_attack(client_ip, "/login", "POST", payload, request.headers.get("user-agent", ""))
     return HTMLResponse(content="<script>alert('Invalid Authentication Credentials'); window.location.href='/';</script>")
 
 @web_decoy_app.get("/api/v1/auth/keys")
@@ -281,7 +281,7 @@ def api_trap(request: Request):
     key = "api_auth_keys" if request.url.path.endswith("keys") else "api_db_export"
     if not is_decoy_enabled(key):
         return JSONResponse({"detail": "Not found"}, status_code=404)
-    process_web_attack(request.client.host, request.url.path, "GET", "Honeytoken URL Triggered")
+    process_web_attack(request.client.host, request.url.path, "GET", "Honeytoken URL Triggered", request.headers.get("user-agent", ""))
     return JSONResponse({"detail": "Access denied"}, status_code=403)
 
 @web_decoy_app.get('/documents/{token}', response_class=HTMLResponse)
@@ -320,9 +320,9 @@ def catch_all(request: Request, full_path: str):
     for token in get_honeytokens():
         if token["type"] == "Decoy URL" and token["token_value"] == "/" + full_path:
             record_honeytoken_hit(token["token_id"], client_ip)
-            process_web_attack(client_ip, "/" + full_path, request.method, "Honeytoken URL Triggered")
+            process_web_attack(client_ip, "/" + full_path, request.method, "Honeytoken URL Triggered", request.headers.get("user-agent", ""))
             return HTMLResponse("Access denied", status_code=403)
-    process_web_attack(client_ip, f"/{full_path}", request.method, str(request.query_params))
+    process_web_attack(client_ip, f"/{full_path}", request.method, str(request.query_params), request.headers.get("user-agent", ""))
     return HTMLResponse(content="<h1>404 Not Found</h1>", status_code=404)
 
 class WebHoneypotServer:

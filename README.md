@@ -23,6 +23,54 @@ Visit `http://localhost:8000`. On first startup a random admin token is saved to
 
 The management console is loopback-only in development, including API and WebSocket access. Browser sessions expire after eight hours. API clients use `Authorization: Bearer <token>`. Cookie-authenticated mutations require `X-Karma-Request: 1`; the dashboard supplies it automatically. Changing the token and restarting invalidates existing sessions.
 
+## Live demo: https://karma-honeypot.com with Windows and Linux attackers
+
+Three PCs on the same network (Wi-Fi, switch or the KARMA PC's mobile hotspot):
+
+| PC | Role |
+| --- | --- |
+| KARMA PC (Windows) | Runs KARMA, shows the dashboard and the live visualizer |
+| Attacker 1 (Windows) | Scans and attacks the KARMA PC's LAN IP |
+| Attacker 2 (Linux) | Scans and attacks the KARMA PC's LAN IP |
+
+**One-time setup on the KARMA PC** (Administrator PowerShell, in the repo folder):
+
+```powershell
+python -m pip install -r requirements.txt
+powershell -ExecutionPolicy Bypass -File tools\setup-demo.ps1
+```
+
+The script maps `karma-honeypot.com` to this PC, creates and trusts a local HTTPS certificate,
+allows Python through Windows Firewall on every network profile, warns about busy ports
+(turn off Remote Desktop if 3389 is taken) and prints the LAN IP the attackers should target.
+Then start KARMA with `python run.py`, launch the server and open:
+
+- `https://karma-honeypot.com` for the dashboard
+- `https://karma-honeypot.com/visualizer` for the live shield diagram. Press **Fullscreen** on the projector.
+
+The dashboard stays private to the KARMA PC; attackers only reach the decoys.
+Without the certificate, KARMA falls back to `http://localhost:8000`.
+
+**Attack script.** Replace `<KARMA-IP>` with the printed LAN IP:
+
+| Stage | Linux attacker | Windows attacker |
+| --- | --- | --- |
+| Recon | `nmap -sT -sV -p 21,23,2222,3389,8080 <KARMA-IP>` | `nmap -sT -p 21,23,2222,3389,8080 <KARMA-IP>` (if Nmap is installed) or `Test-NetConnection <KARMA-IP> -Port 2222` |
+| Web probe | `curl "http://<KARMA-IP>:8080/?id=1+UNION+SELECT+password+FROM+users"` | Open `http://<KARMA-IP>:8080` in Edge |
+| Honeytoken | `curl http://<KARMA-IP>:8080/api/v1/auth/keys` | Edge: `http://<KARMA-IP>:8080/secret-vault-admin-login-php` |
+| Break-in | `ssh root@<KARMA-IP> -p 2222` (any password), then `ls`, `cd /srv/company`, `cat contacts.csv` | Same in PowerShell `ssh` (built into Windows 10/11) |
+| Escalation | `whoami` or `cat /etc/passwd` inside the SSH session | Same |
+| FTP loot | `ftp <KARMA-IP>`, user `Admin` | `ftp <KARMA-IP>`, user `Admin` |
+
+Use `nmap -sT` (connect scan): the default root SYN scan (`-sS`) never completes a TCP connection,
+so no honeypot can see it. The visualizer labels each attacker's OS from its SSH client banner or
+browser user agent (Nmap and curl don't reveal an OS).
+
+**Contain vs Observe.** In *Contain* mode scans, page views and logins are logged but never
+blocked. Only high-risk actions (SQL injection, honeytokens, `whoami`/`cat /etc/...`) quarantine
+the attacker, which ends the demo on a "contained" moment. Use *Observe* to explore the fake shell
+freely, and unblock attacker IPs in the dashboard between rehearsals.
+
 ## Network surfaces
 
 | Port | Purpose |

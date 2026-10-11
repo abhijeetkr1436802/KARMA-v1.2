@@ -9,8 +9,12 @@ LOG_DIR = DATA_DIR / "logs"
 ADMIN_TOKEN_FILE = DATA_DIR / "admin-token"
 ADMIN_TOKEN = os.environ.get("KARMA_ADMIN_TOKEN", "")
 PRODUCTION = os.environ.get("KARMA_ENV", "development") == "production"
-COOKIE_SECURE = PRODUCTION or os.environ.get("KARMA_COOKIE_SECURE") == "1"
-ALLOWED_HOSTS = os.environ.get("KARMA_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]").split(",")
+DOMAIN = os.environ.get("KARMA_DOMAIN", "karma-honeypot.com")
+ALLOWED_HOSTS = os.environ.get("KARMA_ALLOWED_HOSTS", f"localhost,127.0.0.1,[::1],{DOMAIN}").split(",")
+# Created by tools/make_cert.py; when present the dashboard serves HTTPS on 443.
+TLS_CERT = DATA_DIR / "tls" / "server.pem"
+TLS_KEY = DATA_DIR / "tls" / "server-key.pem"
+TLS_ENABLED = TLS_CERT.is_file() and TLS_KEY.is_file()
 ENABLE_SENSORS = os.environ.get("KARMA_ENABLE_SENSORS", "1") == "1"
 # An operator-selected lab marker, never an inferred attacker location.
 LAB_LOCATION_ENABLED = os.environ.get("KARMA_LAB_LOCATION_ENABLED", "1") == "1"
@@ -33,7 +37,9 @@ if MAX_EVENTS < 100:
 
 HOST = os.environ.get("KARMA_HOST", "127.0.0.1")
 SENSOR_HOST = os.environ.get("KARMA_SENSOR_HOST", "0.0.0.0")
-PORT_API = 8000
+COOKIE_SECURE = PRODUCTION or TLS_ENABLED or os.environ.get("KARMA_COOKIE_SECURE") == "1"
+PORT_API = int(os.environ.get("KARMA_PORT", "443" if TLS_ENABLED else "8000"))
+DASHBOARD_URL = (f"https://{DOMAIN}" + ("" if PORT_API == 443 else f":{PORT_API}")) if TLS_ENABLED else f"http://localhost:{PORT_API}"
 PORT_SSH_HONEYPOT = 2222
 PORT_WEB_HONEYPOT = 8080
 DECOY_PORTS = [21, 23, 3389]  # FTP, Telnet, RDP decoy probes

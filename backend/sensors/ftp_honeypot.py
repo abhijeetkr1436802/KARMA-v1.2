@@ -63,6 +63,14 @@ class FTPHoneypotServer(BoundedTCPServer):
                         self.clients.discard(data)
                     data.close()
                 close_data()
+        # Log the bare connection too, so connect scans (nmap -sT/-sV) show up before any command.
+        from backend.engine.threat_score import calculate_event_risk
+        score, severity = calculate_event_risk(40, db.get_attempt_count(ip) + 1)
+        event = db.log_attack_event(ip, self.port, 'FTP_HONEYPOT', 'FTP connection / service discovery',
+                                    'TCP connection to FTP service', 'T1046', 'Network Service Discovery',
+                                    'Discovery', score, severity)
+        if self.broadcast:
+            self.broadcast({'id': event})
         reply('220 Aegis Corporate File Service ready.')
         try:
             with control.makefile('rb') as reader:

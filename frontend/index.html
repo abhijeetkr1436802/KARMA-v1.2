@@ -17,14 +17,15 @@
         rel="stylesheet">
 
     <!-- Leaflet CSS for World Map -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/vendor/leaflet.css" />
 
     <!-- Custom SIEM CSS -->
     <link rel="stylesheet" href="/static/css/style.css?v=2.1">
 
     <!-- Leaflet JS & Chart.js -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <script src="/static/vendor/leaflet.js"></script>
+    <script src="/static/vendor/chart.umd.js"></script>
+    <script src="/static/vendor/md5.min.js"></script>
 </head>
 
 <body>
@@ -52,24 +53,12 @@
         </div>
 
         <div class="topbar-right">
-            <div class="filter-dropdown">
-                <span class="icon">📅</span>
-                <select id="timeFilterSelect">
-                    <option value="50">Latest 50 events</option>
-                    <option value="200">Latest 200 events</option>
-                    <option value="1000">Latest 1,000 events</option>
-                </select>
-            </div>
-
             <!-- LIGHT / DARK MODE TOGGLE SWITCH -->
             <button class="theme-switch-btn" id="themeToggle" title="Toggle Light/Dark Theme">
                 <span class="theme-icon-sun">☀️ Light</span>
                 <span class="theme-icon-moon">🌙 Dark</span>
             </button>
 
-            <button class="btn btn-secondary" id="btnLaunchTester"
-                title="Launch Honeypot Tester & Attacker Verification Suite">🧪 Tester / Attacker</button>
-            <button class="btn btn-primary" id="btnLaunchSim">⚡ Run Attack Simulator</button>
             <button class="btn btn-danger" id="btnResetData"
                 title="Reset system telemetry and clear all charts">🗑️ Reset System</button>
         </div>
@@ -91,6 +80,10 @@
                 <a href="#mitre" class="nav-item" data-tab="mitre">
                     <span class="nav-icon">🎯</span>
                     <span class="nav-text">MITRE ATT&CK</span>
+                </a>
+                <a href="/visualizer" class="nav-item">
+                    <span class="nav-icon">🛰️</span>
+                    <span class="nav-text">Live Shield Visualizer</span>
                 </a>
 
                 <div class="nav-section-title">DECEPTION & ASSETS</div>
@@ -178,17 +171,26 @@
                 </section>
 
                 <!-- ROW 1: TIME SERIES TREND LINE PLOT & WORLD MAP (Logz.io Image 1 Style) -->
-                <section id="documentLab" class="widget-box" style="margin-bottom:20px">
-                    <div class="widget-header"><h3>Document decoy lab</h3></div>
-                    <p>Download the company reports with SFTP from <code>/root</code>. Follow the document link and submit the acknowledgement to trigger a live alert.</p>
-                    <p style="color:var(--text-secondary);font-size:12px">A file read does not establish a completed download. Opening a file alone sends no signal. Confirmations do not grant access to the reader's computer.</p>
-                    <label for="engagementMode">Engagement mode</label>
-                    <select id="engagementMode" onchange="setEngagementMode(this.value)">
-                        <option value="contain">Contain — automatically block high-risk sessions</option>
-                        <option value="observe">Observe — keep sessions open for the lab</option>
-                    </select>
-                    <p id="engagementStatus" role="status" style="font-size:12px">Existing blocks remain active; unblock your test IP in Attacker Profiles if needed.</p>
-                    <div id="documentEvents" aria-live="polite" style="max-height:210px;overflow:auto"></div>
+                <section id="documentLab" class="doc-lab-bar" style="margin-bottom:20px">
+                    <div class="doc-lab-head">
+                        <h3>🪤 Document decoy lab</h3>
+                        <div class="doc-lab-mode">
+                            <label for="engagementMode">Engagement mode</label>
+                            <select id="engagementMode" onchange="setEngagementMode(this.value)">
+                                <option value="contain">Contain (auto-block)</option>
+                                <option value="observe">Observe (keep open)</option>
+                            </select>
+                        </div>
+                        <details class="doc-lab-more">
+                            <summary>How it works</summary>
+                            <div class="doc-lab-body">
+                                <p>Download the company reports with SFTP from <code>/root</code>. Follow the document link and submit the acknowledgement to trigger a live alert.</p>
+                                <p style="color:var(--text-secondary);font-size:12px">A file read does not establish a completed download. Opening a file alone sends no signal. Confirmations do not grant access to the reader's computer.</p>
+                                <p id="engagementStatus" role="status" style="font-size:12px">Existing blocks remain active; unblock your test IP in Attacker Profiles if needed.</p>
+                                <div id="documentEvents" aria-live="polite" style="max-height:210px;overflow:auto"></div>
+                            </div>
+                        </details>
+                    </div>
                 </section>
                 <div id="documentAlert" role="status" hidden style="position:fixed;right:24px;bottom:24px;z-index:5000;max-width:460px;padding:22px;background:var(--bg-card,#172033);color:var(--text-primary);border:2px solid #3b82f6;border-radius:12px;box-shadow:0 8px 32px #0005">
                     <strong>Document decoy alert</strong><p id="documentAlertText"></p>
@@ -659,7 +661,7 @@
                             <div
                                 style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 18px;">
                                 <div class="clay-card-sm" style="padding: 14px; text-align: center;">
-                                    <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">Estimated GPU Crack Time
+                                    <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">Crack time (fast-hash GPU)
                                     </div>
                                     <div id="passCrackTime"
                                         style="font-size: 15px; font-weight: 800; color: var(--text-primary); margin-top: 4px;">
@@ -684,6 +686,9 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- PROOF PANEL: breach-list hit + transparent crack math -->
+                        <div id="passProof" style="margin-bottom:22px;"></div>
 
                         <!-- MARKET HASH TABLE -->
                         <div class="clay-card" style="padding: 22px;">
@@ -741,35 +746,41 @@
                     <div class="widget-body" style="padding: 20px;">
 
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                            <!-- Upload Box -->
+                            <!-- Paste Box (primary, fastest) -->
                             <div class="clay-card" style="padding: 22px;">
                                 <h4
                                     style="font-size: 14px; font-weight: 800; color: var(--text-primary); margin-bottom: 8px;">
-                                    Upload .EML Email File for Inspection:</h4>
+                                    Paste an email to scan — no download needed:</h4>
                                 <p
-                                    style="font-size: 12px; color: var(--text-secondary); margin-bottom: 18px; line-height: 1.6;">
-                                    Upload RFC822 <code>.eml</code> files. When DeepSeek is configured, headers and up to 2,500 characters of email text are sent to that provider. Otherwise local heuristics are used. SPF/DKIM headers are inspected, not independently verified.
+                                    style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.6;">
+                                    Paste the raw source <em>or</em> just the visible email text. Headers (SPF/DKIM, Return-Path) are checked when present; SPF/DKIM are read, not independently verified.
                                 </p>
-
-                                <div id="emlDropZone" class="clay-card-sm"
-                                    style="border: 2px dashed var(--accent-blue) !important; padding: 32px 20px; text-align: center; cursor: pointer; margin-bottom: 18px; transition: transform 0.2s, box-shadow 0.2s;">
-                                    <div style="font-size: 38px; margin-bottom: 8px;">📂</div>
-                                    <div style="font-weight: 800; font-size: 14.5px; color: var(--text-primary);">Click or
-                                        Drag & Drop .EML File Here</div>
-                                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; font-weight: 600;">Supports
-                                        RFC822 .eml / .msg formats</div>
-                                    <input type="file" id="emlFileInput" accept=".eml,.msg" style="display: none;" />
-                                </div>
-
-                                <div style="display: flex; gap: 12px;">
-                                    <button class="btn btn-primary" id="btnUploadEml"
-                                        style="flex: 1; padding: 11px; font-weight: 800;">
-                                        🤖 Run DeepSeek AI Forensic Analysis
+                                <details style="margin-bottom:12px;font-size:12px;color:var(--text-secondary)">
+                                    <summary style="cursor:pointer;color:var(--accent-blue);font-weight:700">How to get the raw source (optional)</summary>
+                                    <div style="margin-top:8px;line-height:1.7">
+                                        <strong>Gmail:</strong> open the email → ⋮ (top-right) → <em>Show original</em> → Copy to clipboard.<br>
+                                        <strong>Outlook desktop:</strong> open the email → File → Properties → copy the <em>Internet headers</em>, or Save As → .eml.<br>
+                                        <strong>Any client:</strong> just select the email text and paste it below — the scanner still runs.
+                                    </div>
+                                </details>
+                                <textarea id="emlPasteInput" class="clay-input" spellcheck="false"
+                                    placeholder="Paste email source or text here, then click Scan..."
+                                    style="width:100%; min-height:200px; font-family:'JetBrains Mono',monospace; font-size:12px; resize:vertical;"></textarea>
+                                <div style="display: flex; gap: 12px; margin-top: 14px; flex-wrap:wrap;">
+                                    <button class="btn btn-primary" id="btnScanEmlText"
+                                        style="flex: 1; min-width:160px; padding: 11px; font-weight: 800;">
+                                        🔍 Scan Pasted Email
                                     </button>
                                     <button class="btn btn-secondary" onclick="loadSampleEml()"
-                                        title="Load Sample Phishing Email">
-                                        🧪 Sample .EML
+                                        title="Load a sample phishing email into the box">
+                                        🧪 Load Sample
                                     </button>
+                                </div>
+                                <div style="margin-top:14px; padding-top:14px; border-top:1px dashed var(--border-color);">
+                                    <div id="emlDropZone" style="cursor:pointer; font-size:12px; color:var(--text-muted); font-weight:700;">
+                                        📂 …or click here to upload a <code>.eml</code> file instead
+                                        <input type="file" id="emlFileInput" accept=".eml,.msg" style="display: none;" />
+                                    </div>
                                 </div>
                             </div>
 

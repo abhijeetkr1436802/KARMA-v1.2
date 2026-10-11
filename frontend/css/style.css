@@ -731,6 +731,8 @@ body {
 }
 
 #engagementMode {
+    width: auto;
+    align-self: flex-start;
     max-width: 100%;
     margin: 8px 0;
     padding: 8px;
@@ -2152,4 +2154,46 @@ input:checked + .slider:before {
     .decoy-grid {
         grid-template-columns: 1fr;
     }
+}
+
+/* Compact Document decoy lab bar */
+.doc-lab-bar {
+    background: var(--bg-widget);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 10px 16px;
+    box-shadow: var(--clay-shadow);
+}
+.doc-lab-head {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.doc-lab-head h3 { margin: 0; font-size: 15px; white-space: nowrap; }
+.doc-lab-mode {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+.doc-lab-mode label { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.doc-lab-bar #engagementMode { margin: 0; width: auto; }
+.doc-lab-more { font-size: 13px; }
+.doc-lab-more > summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--accent-blue);
+    list-style: none;
+    user-select: none;
+    white-space: nowrap;
+}
+.doc-lab-more > summary::-webkit-details-marker { display: none; }
+.doc-lab-more > summary::before { content: "▸ "; }
+.doc-lab-more[open] > summary::before { content: "▾ "; }
+.doc-lab-body { width: 100%; margin-top: 10px; }
+.doc-lab-body > p { margin: 6px 0; }
+@media (max-width: 640px) {
+    .doc-lab-mode { margin-left: 0; width: 100%; }
+    .doc-lab-mode #engagementMode { flex: 1; }
 }

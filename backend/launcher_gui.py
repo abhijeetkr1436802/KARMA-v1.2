@@ -14,7 +14,7 @@ import uvicorn
 # Ensure parent directory is in python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend.config import HOST, PORT_API
+from backend.config import HOST, PORT_API, DASHBOARD_URL, TLS_ENABLED, TLS_CERT, TLS_KEY
 from backend.decoy_state import DECOYS, toggle_decoy, initialize_decoys
 from backend.database import init_db
 
@@ -113,7 +113,7 @@ class KarmaPreflightLauncher:
             ("port_21", "FTP Service Decoy (Port 21)", "Traps interactive FTP logins & command probes"),
             ("port_23", "Telnet Remote Decoy (Port 23)", "Traps interactive Telnet logins & command probes"),
             ("port_3389", "RDP Remote Desktop Decoy (Port 3389)", "Listens for Remote Desktop Connection probes"),
-            ("api_auth_keys", "Honeytoken API Traps (Port 8000)", "Fake REST endpoints `/api/v1/auth/keys` & `db_export`"),
+            ("api_auth_keys", "Honeytoken API Traps (Port 8080)", "Fake REST endpoints `/api/v1/auth/keys` & `db_export`"),
         ]
 
         row = 0
@@ -253,7 +253,8 @@ class KarmaPreflightLauncher:
         self.server_running = True
 
         self.log("================================================================")
-        self.log(f"[+] Starting Dashboard & API Server on http://localhost:{PORT_API}")
+        self.log(f"[+] Starting Dashboard & API Server on {DASHBOARD_URL}")
+        self.log(f"[+] Live attack visualizer: {DASHBOARD_URL}/visualizer")
         self.log("================================================================")
 
         # Launch Uvicorn in Background Thread
@@ -262,7 +263,9 @@ class KarmaPreflightLauncher:
 
     def _run_uvicorn(self):
         try:
-            config = uvicorn.Config("backend.app:app", host=HOST, port=PORT_API, reload=False, log_level="info", proxy_headers=False, limit_concurrency=128, timeout_graceful_shutdown=15)
+            config = uvicorn.Config("backend.app:app", host=HOST, port=PORT_API, reload=False, log_level="info", proxy_headers=False, limit_concurrency=128, timeout_graceful_shutdown=15,
+                                    ssl_certfile=str(TLS_CERT) if TLS_ENABLED else None,
+                                    ssl_keyfile=str(TLS_KEY) if TLS_ENABLED else None)
             self.uvicorn_server = uvicorn.Server(config)
             self.uvicorn_server.run()
         except (Exception, SystemExit) as e:

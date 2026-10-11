@@ -64,6 +64,7 @@ class ParamikoHoneypotInterface(paramiko.ServerInterface):
         self.channel_open = False
         self.mode = None
         self.command = None
+        self.transport = None
 
     def check_channel_request(self, kind, chanid):
         if kind == 'session' and not self.channel_open:
@@ -74,6 +75,9 @@ class ParamikoHoneypotInterface(paramiko.ServerInterface):
     def check_auth_password(self, username, password):
         payload_info = f"SSH Login Attempt: USER '{username}' / PASS '[redacted]'"
         mitre = map_payload_to_mitre("SSH_HONEYPOT", "ssh_command_execution", payload_info)
+        # The client banner reveals the attacker's SSH tool/OS (e.g. OpenSSH_for_Windows, Ubuntu).
+        client = (self.transport.remote_version if self.transport else "") or "unknown"
+        payload_info += f" / CLIENT '{client[:120]}'"
         score, severity = calculate_event_risk(mitre['risk_score'], get_attempt_count(self.client_ip) + 1)
 
         log_id = log_attack_event(
@@ -172,6 +176,7 @@ class SSHHoneypotServer(BoundedTCPServer):
             transport.auth_timeout = 120
             shell = VirtualShell(client_ip, client_sock.getsockname()[0], self.broadcast_callback)
             server = ParamikoHoneypotInterface(client_ip, self.broadcast_callback, self.port, shell)
+            server.transport = transport
             transport.set_subsystem_handler('sftp', paramiko.SFTPServer, VirtualSFTP)
 
             try:

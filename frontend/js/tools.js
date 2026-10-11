@@ -39,11 +39,25 @@ function togglePasswordVisibility() {
     }
 }
 
+// Top real-world breach passwords (rockyou / HaveIBeenPwned "top" lists, abridged).
+// A hit here is the proof that weak passwords fall instantly: attackers try these FIRST.
+const COMMON_PASSWORDS = ["123456","password","12345678","qwerty","123456789","12345","1234","111111","1234567","dragon","123123","baseball","abc123","football","monkey","letmein","696969","shadow","master","666666","qwertyuiop","123321","mustang","1234567890","michael","654321","superman","1qaz2wsx","7777777","121212","000000","qazwsx","123qwe","killer","trustno1","jordan","jennifer","zxcvbnw","asdfgh","hunter","buster","soccer","harley","batman","andrew","tigger","sunshine","iloveyou","2000","charlie","robert","thomas","hockey","ranger","daniel","starwars","klaster","112233","george","computer","michelle","jessica","pepper","1111","zxcvbn","555555","11111111","131313","freedom","777777","pass","maggie","159753","aaaaaa","ginger","princess","joshua","cheese","amanda","summer","love","ashley","nicole","chelsea","biteme","matthew","access","yankees","987654321","dallas","austin","thunder","taylor","matrix","password1","qwerty123","admin","welcome","login","abc12345","passw0rd","p@ssw0rd","test","guest","root","changeme","secret"];
+
+function fmtDuration(seconds) {
+    if (seconds < 1e-3) return "instantly";
+    const u = [["year",31557600],["day",86400],["hour",3600],["minute",60],["second",1]];
+    for (const [name, s] of u) {
+        if (seconds >= s) { const v = seconds / s; return (v >= 1e6 ? v.toExponential(1) : Math.round(v).toLocaleString()) + " " + name + (Math.round(v)===1?"":"s"); }
+    }
+    return seconds.toExponential(1) + " seconds";
+}
+
 function evaluatePasswordStrength(pass) {
     const meter = document.getElementById("passStrengthBar");
     const label = document.getElementById("passStrengthLabel");
     const crackTimeEl = document.getElementById("passCrackTime");
     const entropyEl = document.getElementById("passEntropyScore");
+    const proofEl = document.getElementById("passProof");
 
     const lenEl = document.getElementById("passCheckLen");
     const upperEl = document.getElementById("passCheckUpper");
@@ -54,8 +68,9 @@ function evaluatePasswordStrength(pass) {
     if (!pass) {
         if (meter) meter.style.width = "0%";
         if (label) { label.innerText = "Awaiting Input"; label.style.color = "var(--text-muted)"; }
-        if (crackTimeEl) crackTimeEl.innerText = "Instant";
+        if (crackTimeEl) crackTimeEl.innerText = "—";
         if (entropyEl) entropyEl.innerText = "0 Bits";
+        if (proofEl) proofEl.innerHTML = "";
         return;
     }
 
@@ -65,65 +80,94 @@ function evaluatePasswordStrength(pass) {
     const hasNum = /[0-9]/.test(pass);
     const hasSym = /[^A-Za-z0-9]/.test(pass);
 
-    if (lenEl) lenEl.style.color = len >= 8 ? "#10b981" : "var(--text-muted)";
+    if (lenEl) lenEl.style.color = len >= 12 ? "#10b981" : "var(--text-muted)";
     if (upperEl) upperEl.style.color = hasUpper ? "#10b981" : "var(--text-muted)";
     if (lowerEl) lowerEl.style.color = hasLower ? "#10b981" : "var(--text-muted)";
     if (numEl) numEl.style.color = hasNum ? "#10b981" : "var(--text-muted)";
     if (symEl) symEl.style.color = hasSym ? "#10b981" : "var(--text-muted)";
 
-    let poolSize = 0;
-    if (hasLower) poolSize += 26;
-    if (hasUpper) poolSize += 26;
-    if (hasNum) poolSize += 10;
-    if (hasSym) poolSize += 33;
-    if (poolSize === 0) poolSize = 1;
+    let pool = 0;
+    if (hasLower) pool += 26;
+    if (hasUpper) pool += 26;
+    if (hasNum) pool += 10;
+    if (hasSym) pool += 33;
+    if (pool === 0) pool = 1;
 
-    // Calculate Entropy Bits: length * log2(poolSize)
-    const entropy = Math.floor(len * (Math.log2(poolSize)));
+    const entropy = Math.round(len * Math.log2(pool));
     if (entropyEl) entropyEl.innerText = `${entropy} Bits`;
 
-    // Estimate crack time assuming 100 Billion Hashes/sec offline GPU cluster
-    let secondsToCrack = Math.pow(poolSize, len) / 100000000000;
-    let crackTimeStr = "Instant (< 1 Second)";
+    // Is it a known breached password? That is the real proof of "instant".
+    const breachIndex = COMMON_PASSWORDS.indexOf(pass.toLowerCase());
+    const breached = breachIndex !== -1;
 
-    if (secondsToCrack > 31536000000) {
-        crackTimeStr = `${Math.floor(secondsToCrack / 31536000000).toLocaleString()} Centuries`;
-    } else if (secondsToCrack > 31536000) {
-        crackTimeStr = `${Math.floor(secondsToCrack / 31536000)} Years`;
-    } else if (secondsToCrack > 86400) {
-        crackTimeStr = `${Math.floor(secondsToCrack / 86400)} Days`;
-    } else if (secondsToCrack > 3600) {
-        crackTimeStr = `${Math.floor(secondsToCrack / 3600)} Hours`;
-    } else if (secondsToCrack > 60) {
-        crackTimeStr = `${Math.floor(secondsToCrack / 60)} Minutes`;
-    } else if (secondsToCrack >= 1) {
-        crackTimeStr = `${Math.floor(secondsToCrack)} Seconds`;
-    }
+    // Transparent math: combinations = pool^len, attacker tries half on average.
+    // Attacker speeds are public hashcat-class benchmarks.
+    const SCENARIOS = [
+        ["Online guess (rate-limited login)", 100],
+        ["Offline, slow hash (bcrypt/argon2)", 1e4],
+        ["Offline, fast hash (MD5/SHA, 1 GPU)", 1e10],
+        ["Offline, fast hash (GPU farm)", 1e12],
+    ];
+    const combos = Math.pow(pool, len);
+    const avg = combos / 2;
+    const fastHashSeconds = avg / 1e10;
 
-    if (crackTimeEl) crackTimeEl.innerText = crackTimeStr;
+    // Headline metric = fast-hash single GPU (stated assumption on the card)
+    if (crackTimeEl) crackTimeEl.innerText = breached ? "Instant" : fmtDuration(fastHashSeconds);
 
-    let color = "#ef4444";
-    let textLabel = "WEAK";
-    let pct = 20;
+    // Strength label
+    let color = "#ef4444", textLabel = "VERY WEAK", pct = 15;
+    if (breached) { color = "#ef4444"; textLabel = "BREACHED — DO NOT USE"; pct = 8; }
+    else if (entropy >= 80) { pct = 100; color = "#10b981"; textLabel = "VERY STRONG"; }
+    else if (entropy >= 60) { pct = 80; color = "#3b82f6"; textLabel = "STRONG"; }
+    else if (entropy >= 40) { pct = 55; color = "#f59e0b"; textLabel = "FAIR"; }
+    else if (entropy >= 28) { pct = 35; color = "#f97316"; textLabel = "WEAK"; }
+    if (meter) { meter.style.width = `${pct}%`; meter.style.backgroundColor = color; }
+    if (label) { label.innerText = textLabel; label.style.color = color; }
 
-    if (entropy >= 80) {
-        pct = 100; color = "#10b981"; textLabel = "MILITARY-GRADE (VERY STRONG)";
-    } else if (entropy >= 60) {
-        pct = 80; color = "#3b82f6"; textLabel = "STRONG";
-    } else if (entropy >= 40) {
-        pct = 50; color = "#f59e0b"; textLabel = "FAIR";
-    } else if (entropy >= 20) {
-        pct = 30; color = "#f97316"; textLabel = "WEAK";
-    }
+    // Build the proof panel
+    if (!proofEl) return;
+    const rows = SCENARIOS.map(([name, rate]) => {
+        const t = breached ? "instantly (wordlist)" : fmtDuration(avg / rate);
+        const danger = (breached || (avg / rate) < 60);
+        return `<tr>
+            <td style="padding:6px 10px;border-bottom:1px solid var(--border-color);">${name}</td>
+            <td style="padding:6px 10px;border-bottom:1px solid var(--border-color);font-family:monospace;color:var(--text-muted);">${rate.toExponential(0)} /s</td>
+            <td style="padding:6px 10px;border-bottom:1px solid var(--border-color);font-weight:800;color:${danger?'#ef4444':'#10b981'};">${t}</td>
+        </tr>`;
+    }).join("");
 
-    if (meter) {
-        meter.style.width = `${pct}%`;
-        meter.style.backgroundColor = color;
-    }
-    if (label) {
-        label.innerText = textLabel;
-        label.style.color = color;
-    }
+    const breachBanner = breached ? `
+        <div style="background:rgba(239,68,68,0.1);border:2px solid #ef4444;border-radius:8px;padding:12px 14px;margin-bottom:14px;">
+            <div style="font-weight:800;color:#ef4444;font-size:13px;">🚨 Found in public breach wordlists</div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;line-height:1.6;">
+                This password sits near the top of real leaked-password lists (e.g. <code>rockyou.txt</code>, ~#${breachIndex + 1} here).
+                Attackers run these lists first, so it falls <strong>instantly</strong> — brute-force math never even applies. <em>This is the proof.</em>
+            </div>
+        </div>` : "";
+
+    proofEl.innerHTML = `
+        ${breachBanner}
+        <div class="clay-card" style="padding:16px 18px;">
+            <h4 style="font-size:13px;font-weight:800;color:var(--text-primary);margin-bottom:8px;">🧮 How the crack time is calculated (the proof)</h4>
+            <div style="font-size:12px;color:var(--text-secondary);line-height:1.7;margin-bottom:10px;font-family:monospace;">
+                character set N = <b>${pool}</b> &nbsp;·&nbsp; length L = <b>${len}</b><br>
+                combinations = N<sup>L</sup> = ${pool}<sup>${len}</sup> ≈ <b>${combos.toExponential(2)}</b><br>
+                time = (combinations ÷ 2) ÷ guesses-per-second
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                <thead><tr style="text-align:left;color:var(--text-muted);">
+                    <th style="padding:6px 10px;">Attacker scenario</th>
+                    <th style="padding:6px 10px;">Guess rate</th>
+                    <th style="padding:6px 10px;">Time to crack</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+            <p style="font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.6;">
+                Rates are public hashcat-class benchmarks: a single modern GPU does ~10<sup>10</sup> fast-hash (MD5/SHA-1) guesses/sec.
+                Slow hashes like bcrypt/argon2 are deliberately ~10<sup>6</sup>× slower — which is why the hashes below matter.
+            </p>
+        </div>`;
 }
 
 async function computeMarketHashes(pass) {
@@ -157,18 +201,9 @@ function bufToHex(buffer) {
         .join("");
 }
 
-function generateClientMD5(string) {
-    let hash = 0;
-    for (let i = 0; i < string.length; i++) {
-        let char = string.charCodeAt(i);
-        hash = (hash << 5) - hash + char;
-        hash |= 0;
-    }
-    const h1 = Math.abs(hash).toString(16).padStart(8, '0');
-    const h2 = Math.abs(hash * 31).toString(16).padStart(8, '0');
-    const h3 = Math.abs(hash * 127).toString(16).padStart(8, '0');
-    const h4 = Math.abs(hash * 8191).toString(16).padStart(8, '0');
-    return (h1 + h2 + h3 + h4).substring(0, 32);
+// MD5 via blueimp-md5 (vendored, verified: md5("abc")==="900150983cd24fb0d6963f7d28e17f72").
+function generateClientMD5(str) {
+    return (typeof md5 === "function") ? md5(str) : "md5 library not loaded";
 }
 
 function copyHashValue(elementId) {
@@ -184,7 +219,15 @@ function copyHashValue(elementId) {
 function initPhishingEmlTool() {
     const dropZone = document.getElementById("emlDropZone");
     const fileInput = document.getElementById("emlFileInput");
-    const btnUpload = document.getElementById("btnUploadEml");
+    const btnScanText = document.getElementById("btnScanEmlText");
+
+    if (btnScanText) {
+        btnScanText.addEventListener("click", () => {
+            const text = (document.getElementById("emlPasteInput") || {}).value || "";
+            if (!text.trim()) { document.getElementById("emlPasteInput")?.focus(); return; }
+            handleEmlText(text);
+        });
+    }
 
     if (!dropZone || !fileInput) return;
 
@@ -214,14 +257,35 @@ function initPhishingEmlTool() {
         }
     });
 
-    if (btnUpload) {
-        btnUpload.addEventListener("click", () => {
-            if (fileInput.files.length > 0) {
-                handleEmlFileUpload(fileInput.files[0]);
-            } else {
-                fileInput.click();
-            }
+}
+
+function showEmlScanning() {
+    const output = document.getElementById("phishingResultContainer");
+    if (output) output.innerHTML = `
+        <div style="text-align: center; padding: 30px; color: var(--accent-blue);">
+            <div style="font-size: 28px; margin-bottom: 8px;">🔍</div>
+            <div style="font-weight: 700; font-size: 14px;">Parsing headers &amp; body, scoring threat signals…</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Return-Path alignment, SPF/DKIM, urgency cues, embedded links</div>
+        </div>`;
+}
+
+async function handleEmlText(source) {
+    const btn = document.getElementById("btnScanEmlText");
+    if (btn) { btn.disabled = true; btn.innerText = "⏳ Scanning…"; }
+    showEmlScanning();
+    try {
+        const res = await fetch("/api/tools/phishing-text", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ source: source.slice(0, 200000) })
         });
+        if (!res.ok) throw new Error((await res.json()).detail || "Scan failed");
+        renderEmlPhishingReport(await res.json());
+    } catch (err) {
+        const output = document.getElementById("phishingResultContainer");
+        if (output) output.innerHTML = `<div style="color:#ef4444;padding:20px;text-align:center;">Error: ${escapeHTML(err.message)}</div>`;
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerText = "🔍 Scan Pasted Email"; }
     }
 }
 
@@ -353,7 +417,7 @@ http://185.220.101.5/verify-account-login.php
 Thank you,
 Customer Security Operations`;
 
-    const blob = new Blob([sampleEmlContent], { type: "message/rfc822" });
-    const file = new File([blob], "sample_phishing_attack.eml", { type: "message/rfc822" });
-    handleEmlFileUpload(file);
+    const box = document.getElementById("emlPasteInput");
+    if (box) box.value = sampleEmlContent;
+    handleEmlText(sampleEmlContent);
 }

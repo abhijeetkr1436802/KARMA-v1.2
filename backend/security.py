@@ -108,7 +108,7 @@ class RequestGuard:
                 return await reject(400, "HTTPS is required")
             public = path in {"/login", "/healthz"}
             if not public and not authenticated(headers, scope["app"].state.admin_token):
-                if not websocket and path == "/":
+                if not websocket and path in ("/", "/visualizer"):
                     return await RedirectResponse("/login", status_code=303)(scope, receive, send)
                 return await reject(401, "Authentication required")
             if not public and not websocket and scope["method"] not in {"GET", "HEAD", "OPTIONS"}:

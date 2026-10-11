@@ -81,6 +81,15 @@ def map_payload_to_mitre(decoy_service, attack_type, payload=""):
                     }
 
     # Default Fallback mapping
+    if "executed command" in payload_lower:
+        # Harmless commands (ls, cd, pwd) inside the fake shell: execution, but not quarantine-worthy.
+        return {
+            "mitre_id": "T1059",
+            "mitre_name": "Command and Scripting Interpreter",
+            "mitre_tactic": "Execution",
+            "risk_score": 60,
+            "severity": "MEDIUM"
+        }
     if "ssh" in decoy_service.lower():
         return {
             "mitre_id": "T1110",

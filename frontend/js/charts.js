@@ -138,8 +138,30 @@ function initLogTypesDoughnutChart() {
     if (!ctx) return;
     const c = getChartColors();
 
+    const doughnutValueLabels = {
+        id: 'doughnutValueLabels',
+        afterDatasetsDraw(chart) {
+            const ctx2 = chart.ctx;
+            chart.getDatasetMeta(0).data.forEach((arc, i) => {
+                const value = chart.data.datasets[0].data[i];
+                if (!value) return;
+                const { x, y } = arc.getCenterPoint();
+                ctx2.save();
+                ctx2.font = "800 14px 'Plus Jakarta Sans', sans-serif";
+                ctx2.textAlign = 'center';
+                ctx2.textBaseline = 'middle';
+                ctx2.lineWidth = 3;
+                ctx2.strokeStyle = 'rgba(0,0,0,0.55)';
+                ctx2.strokeText(value, x, y);
+                ctx2.fillStyle = '#ffffff';
+                ctx2.fillText(value, x, y);
+                ctx2.restore();
+            });
+        }
+    };
     logTypesDoughnutChartInstance = new Chart(ctx, {
         type: 'doughnut',
+        plugins: [doughnutValueLabels],
         data: {
             labels: ['Critical (Honeytoken)', 'High (SQLi/XSS)', 'Medium (BruteForce)', 'Info (Scan Probe)'],
             datasets: [{

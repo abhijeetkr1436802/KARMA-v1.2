@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KARMA Live Shield</title>
+<link rel="icon" href="/static/Project_Assets/logo_icon.ico">
+<style>
+:root{--bg:#060b16;--panel:#0d1526;--line:#1c2a44;--text:#e6edf7;--muted:#8a9bb8;--shield:#38bdf8;--honey:#f59e0b;--safe:#22c55e;--low:#38bdf8;--med:#facc15;--high:#fb923c;--crit:#ef4444}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font:15px/1.4 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif;overflow:hidden}
+body{display:grid;grid-template-rows:auto 1fr auto;background:radial-gradient(ellipse at 60% 45%,#0d2140 0%,var(--bg) 62%)}
+header{display:flex;align-items:center;gap:22px;padding:14px 26px;border-bottom:1px solid var(--line);background:rgba(6,11,22,.7);backdrop-filter:blur(6px)}
+header img{height:40px}
+h1{font-size:20px;letter-spacing:.08em;font-weight:800}
+h1 small{display:block;font-size:12px;letter-spacing:.04em;color:var(--muted);font-weight:500}
+.stats{display:flex;gap:12px;margin-left:auto}
+.stat{min-width:120px;padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.stat b{display:block;font-size:24px;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat span{font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.stat.bump b{animation:bump .5s}
+@keyframes bump{40%{transform:scale(1.25);color:var(--honey)}}
+.ctrl{display:flex;gap:8px;align-items:center}
+.ctrl a,.ctrl button{color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 14px;font:inherit;font-size:13px;cursor:pointer;text-decoration:none}
+.ctrl a:hover,.ctrl button:hover{border-color:var(--shield)}
+.live{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);letter-spacing:.06em}
+.live i{width:9px;height:9px;border-radius:50%;background:var(--crit)}
+.live.on i{background:var(--safe);box-shadow:0 0 0 0 rgba(34,197,94,.7);animation:ping 1.6s infinite}
+@keyframes ping{70%{box-shadow:0 0 0 9px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+main{position:relative;min-height:0}
+svg{width:100%;height:100%;display:block}
+.lbl{fill:var(--text);font-weight:700;letter-spacing:.08em;font-size:17px}
+.sub{fill:var(--muted);font-size:13px}
+.mono{font-family:Consolas,"JetBrains Mono",monospace}
+#shieldGlow{transition:stroke-width .25s,opacity .25s}
+.flash #shieldGlow{stroke-width:46;opacity:.9}
+.energy{stroke-dasharray:6 18;animation:flow 1.4s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-48}}
+.pulse{animation:pulse 3s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes pulse{50%{opacity:.55}}
+.chip rect{fill:#101c33;stroke:var(--line);transition:fill .3s,stroke .3s}
+.chip text{fill:var(--muted);font-size:12px;font-weight:700;letter-spacing:.05em;transition:fill .3s}
+.chip.hit rect{fill:#3a2606;stroke:var(--honey)}
+.chip.hit text{fill:#ffd58a}
+.attacker{transition:opacity .6s}
+.attacker .ring{fill:#1a0f17;stroke:var(--crit);stroke-width:3}
+.attacker.blocked .ring{fill:#2a0b0b;stroke:#7f1d1d;stroke-dasharray:6 5}
+.attacker .badge{display:none}
+.attacker.blocked .badge{display:inline}
+.attacker.enter{animation:enter .7s cubic-bezier(.2,.9,.3,1.3)}
+@keyframes enter{from{opacity:0;transform:translateX(120px)}}
+.float{font-size:14px;font-weight:700;paint-order:stroke;stroke:#060b16;stroke-width:4px;animation:rise 1.8s ease-out forwards}
+@keyframes rise{to{transform:translateY(-46px);opacity:0}}
+.honey.bump{animation:hb .45s}
+@keyframes hb{40%{transform:scale(1.08)}}
+.honey{transform-box:fill-box;transform-origin:center}
+footer{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:18px;padding:14px 26px 18px;border-top:1px solid var(--line);background:rgba(6,11,22,.75)}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.step{padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);transition:border-color .4s,box-shadow .4s}
+.step b{font-size:13px;letter-spacing:.06em;display:block;margin-bottom:4px}
+.step p{font-size:12.5px;color:var(--muted)}
+.step em{font-style:normal;float:right;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.step.lit{border-color:var(--honey);box-shadow:0 0 22px rgba(245,158,11,.35)}
+.feed{list-style:none;padding:0;display:flex;flex-direction:column;gap:5px;height:132px;overflow:hidden}
+.feed li{display:grid;grid-template-columns:62px 132px 92px 1fr auto;gap:10px;align-items:center;font-size:13px;padding:5px 10px;border-radius:8px;background:var(--panel);border-left:3px solid var(--sev);animation:slide .4s ease-out}
+@keyframes slide{from{opacity:0;transform:translateY(-10px)}}
+.feed .t{color:var(--muted)}
+.feed .tag{font-size:11px;font-weight:800;letter-spacing:.06em;padding:2px 7px;border-radius:6px;color:#060b16;background:var(--sev)}
+.feed .blk{background:var(--crit);color:#fff;margin-left:4px}
+.feed .empty{grid-template-columns:1fr;border-left-color:var(--line);color:var(--muted)}
+#toasts{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{padding:10px 18px;border-radius:12px;background:#3b0a0a;border:1px solid var(--crit);font-weight:700;letter-spacing:.04em;animation:toast 3.2s forwards}
+@keyframes toast{0%{opacity:0;transform:translateY(14px)}10%,80%{opacity:1;transform:none}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important}}
+@media (max-width:1100px){.stats .stat:nth-child(n+3){display:none}footer{grid-template-columns:1fr}.steps{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <img src="/static/Project_Assets/logo_main.png" alt="">
+  <h1>K.A.R.M.A LIVE SHIELD<small>Every attack is drawn to the honeypot; the production server stays out of reach</small></h1>
+  <div class="stats">
+    <div class="stat" id="sCaptured"><b>0</b><span>Attacks captured</span></div>
+    <div class="stat" id="sAttackers"><b>0</b><span>Attackers seen</span></div>
+    <div class="stat" id="sBlocked"><b>0</b><span>Quarantined</span></div>
+    <div class="stat" id="sMode"><b>—</b><span>Defense mode</span></div>
+  </div>
+  <div class="ctrl">
+    <div class="live" id="live"><i></i><span>CONNECTING</span></div>
+    <button id="fs" type="button">Fullscreen</button>
+    <a href="/">Dashboard</a>
+  </div>
+</header>
+
+<main id="stage"><div id="toasts" aria-live="assertive"></div>
+<svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Live diagram: attackers on the right fire at the KARMA shield, which captures every attack and keeps the production server safe">
+  <defs>
+    <linearGradient id="gShield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#38bdf8" stop-opacity=".15"/>
+      <stop offset=".5" stop-color="#7dd3fc"/>
+      <stop offset="1" stop-color="#38bdf8" stop-opacity=".15"/>
+    </linearGradient>
+    <radialGradient id="gHoney" cx=".5" cy=".4" r=".7">
+      <stop offset="0" stop-color="#fcd34d"/><stop offset="1" stop-color="#b45309"/>
+    </radialGradient>
+    <pattern id="hex" width="28" height="48.5" patternUnits="userSpaceOnUse" patternTransform="scale(.8)">
+      <path d="M14 0l14 8v16l-14 8L0 24V8zM14 32.3v16.2" fill="none" stroke="#7dd3fc" stroke-width="1"/>
+    </pattern>
+    <filter id="blur"><feGaussianBlur stdDeviation="9"/></filter>
+    <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+
+  <!-- Production server -->
+  <g transform="translate(150 300)">
+    <rect x="-20" y="-20" width="300" height="370" rx="26" fill="#0b1a12" stroke="#14532d" stroke-width="2" class="pulse"/>
+    <g fill="#0f2a1c" stroke="#22c55e" stroke-opacity=".5">
+      <rect x="20" y="20" width="220" height="56" rx="10"/><rect x="20" y="90" width="220" height="56" rx="10"/><rect x="20" y="160" width="220" height="56" rx="10"/>
+    </g>
+    <g fill="#22c55e"><circle cx="46" cy="48" r="5"/><circle cx="46" cy="118" r="5"/><circle cx="46" cy="188" r="5"/></g>
+    <g stroke="#22c55e" stroke-opacity=".35" stroke-width="4" stroke-linecap="round">
+      <path d="M150 48h66M150 118h66M150 188h66"/>
+    </g>
+    <text x="130" y="262" text-anchor="middle" class="lbl">PRODUCTION SERVER</text>
+    <text x="130" y="284" text-anchor="middle" class="sub">Real company data</text>
+    <rect x="45" y="300" width="170" height="30" rx="15" fill="#052e16" stroke="#22c55e"/>
+    <text x="130" y="320" text-anchor="middle" fill="#4ade80" font-size="13" font-weight="800" letter-spacing="1.5">● PROTECTED</text>
+  </g>
+  <text x="280" y="728" text-anchor="middle" class="sub">Captured attacks that reached it: <tspan fill="#4ade80" font-weight="800">0</tspan></text>
+
+  <!-- Hidden link: production sits behind the decoy layer -->
+  <path d="M450 470 H600" stroke="#22c55e" stroke-opacity=".35" stroke-width="2" stroke-dasharray="4 8" class="energy"/>
+
+  <!-- KARMA honeypot -->
+  <g transform="translate(700 470)"><g id="honey" class="honey">
+    <circle r="118" fill="none" stroke="#f59e0b" stroke-opacity=".18" stroke-width="2" class="pulse"/>
+    <path d="M0-92l80 46v92L0 92l-80-46v-92z" fill="url(#gHoney)" stroke="#fde68a" stroke-width="3" filter="url(#glow)"/>
+    <path d="M0-62l54 31v62L0 62l-54-31v-62z" fill="#78350f" fill-opacity=".55"/>
+    <text y="-8" text-anchor="middle" fill="#fff7e6" font-size="26" font-weight="900" letter-spacing="3">KARMA</text>
+    <text y="16" text-anchor="middle" fill="#fde68a" font-size="12" font-weight="700" letter-spacing="2">HONEYPOT</text>
+    <text id="honeyCount" y="42" text-anchor="middle" fill="#fff" font-size="18" font-weight="800" class="mono">0</text>
+  </g></g>
+  <text x="700" y="620" text-anchor="middle" class="sub">Decoy services pretend to be real</text>
+  <g id="chips"></g>
+
+  <!-- Shield -->
+  <g id="shield">
+    <path d="M900 110 Q1080 470 900 830 Q975 470 900 110Z" fill="url(#hex)" opacity=".22" class="pulse"/>
+    <path id="shieldGlow" d="M900 110 Q1080 470 900 830" fill="none" stroke="#38bdf8" stroke-width="30" opacity=".35" filter="url(#blur)"/>
+    <path d="M900 110 Q1080 470 900 830" fill="none" stroke="url(#gShield)" stroke-width="7" stroke-linecap="round"/>
+    <path d="M900 110 Q1080 470 900 830" fill="none" stroke="#e0f2fe" stroke-width="2" class="energy"/>
+    <text x="990" y="92" text-anchor="middle" class="lbl" fill="#7dd3fc">DECEPTION SHIELD</text>
+  </g>
+
+  <g id="fx"></g>
+  <g id="attackers"></g>
+  <text x="1430" y="92" text-anchor="middle" class="lbl">ATTACKERS</text>
+  <text id="noAttackers" x="1430" y="470" text-anchor="middle" class="sub">Waiting for scans or attacks…</text>
+</svg>
+</main>
+
+<footer>
+  <div class="steps">
+    <div class="step" data-step="recon"><b>1 · RECON <em>0</em></b><p>Scans and probes find the decoy ports</p></div>
+    <div class="step" data-step="access"><b>2 · BREAK-IN <em>0</em></b><p>Logins, exploits and stolen honeytokens</p></div>
+    <div class="step" data-step="exec"><b>3 · INSIDE THE TRAP <em>0</em></b><p>Commands run in a fake shell, never on the host</p></div>
+    <div class="step" data-step="contain"><b>4 · CONTAINED <em>0</em></b><p>High-risk attackers are quarantined</p></div>
+  </div>
+  <ul class="feed" id="feed" aria-live="polite"><li class="empty">No attacks yet. Scan or attack this PC from another machine.</li></ul>
+</footer>
+
+<script>
+'use strict';
+const NS = 'http://www.w3.org/2000/svg';
+const $ = s => document.querySelector(s);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const SEV = {LOW: '#38bdf8', MEDIUM: '#facc15', HIGH: '#fb923c', CRITICAL: '#ef4444'};
+const PORTS = {2222: 'SSH', 8080: 'WEB', 21: 'FTP', 23: 'TELNET', 3389: 'RDP'};
+const MAX_SHOWN = 7, MAX_FLYING = 24;
+const attackers = new Map();   // ip -> {ip, count, blocked, os, tool, last, el}
+const counts = {captured: 0, recon: 0, access: 0, exec: 0, contain: 0};
+let flying = 0;
+
+function el(tag, attrs = {}, parent) {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function text(parent, attrs, value) { const t = el('text', attrs, parent); t.textContent = value; return t; }
+
+// Decoy chips around the honeypot
+const chipPos = [[700, 318, 'SSH'], [540, 400, 'FTP'], [540, 545, 'TELNET'], [860, 400, 'WEB'], [860, 545, 'RDP']];
+const chips = {};
+for (const [x, y, name] of chipPos) {
+  const g = el('g', {class: 'chip', transform: `translate(${x - 38} ${y - 14})`}, $('#chips'));
+  el('rect', {width: 76, height: 28, rx: 14}, g);
+  text(g, {x: 38, y: 18.5, 'text-anchor': 'middle'}, name);
+  chips[name] = g;
+}
+
+// Guess the attacker's OS / tool from SSH client banners and HTTP user agents
+function fingerprint(payload = '') {
+  const p = payload.toLowerCase();
+  let os = null, tool = null;
+  if (/android/.test(p)) os = 'Android';
+  else if (/windows|win64|win32|powershell/.test(p)) os = 'Windows';
+  else if (/mac os|macintosh|darwin/.test(p)) os = 'macOS';
+  else if (/ubuntu|debian|kali|fedora|linux|x11/.test(p)) os = 'Linux';
+  for (const [re, name] of [[/nmap/, 'Nmap'], [/sqlmap/, 'sqlmap'], [/nikto/, 'Nikto'], [/hydra|libssh/, 'Hydra/libssh'],
+                            [/curl\//, 'curl'], [/wget/, 'wget'], [/python-requests|aiohttp/, 'Python'], [/openssh/, 'OpenSSH'],
+                            [/putty/, 'PuTTY'], [/mozilla/, 'Browser']]) {
+    if (re.test(p)) { tool = name; break; }
+  }
+  return {os, tool};
+}
+
+function stage(ev) {
+  if (ev.quarantined) return 'contain';
+  const id = ev.mitre_id || '';
+  if (id === 'T1059' || /command/i.test(ev.attack_type || '')) return 'exec';
+  if (['T1110', 'T1190', 'T1078'].includes(id) || ev.decoy_service === 'DOCUMENT_DECOY') return 'access';
+  return 'recon';
+}
+
+function layout() {
+  const list = [...attackers.values()].sort((a, b) => b.last - a.last).slice(0, MAX_SHOWN);
+  const shown = new Set(list.map(a => a.ip));
+  for (const a of attackers.values()) if (!shown.has(a.ip) && a.el) { a.el.remove(); a.el = null; }
+  list.sort((a, b) => a.ip.localeCompare(b.ip, undefined, {numeric: true}));
+  const gap = 600 / Math.max(list.length, 1);
+  list.forEach((a, i) => {
+    a.y = list.length === 1 ? 470 : 170 + gap / 2 + i * gap;
+    if (!a.el) build(a);
+    a.el.setAttribute('transform', `translate(1430 ${a.y})`);
+    refresh(a);
+  });
+  $('#noAttackers').style.display = attackers.size ? 'none' : '';
+}
+
+function build(a) {
+  const g = a.el = el('g', {class: 'attacker enter'}, $('#attackers'));
+  el('circle', {r: 40, class: 'ring'}, g);
+  // generic computer glyph
+  el('rect', {x: -18, y: -17, width: 36, height: 24, rx: 3, fill: 'none', stroke: '#fca5a5', 'stroke-width': 2.5}, g);
+  el('path', {d: 'M-7 13h14M0 7v6', stroke: '#fca5a5', 'stroke-width': 2.5, 'stroke-linecap': 'round'}, g);
+  a.osPill = el('g', {transform: 'translate(-36 46)'}, g);
+  el('rect', {width: 72, height: 20, rx: 10, fill: '#2a1020', stroke: '#7f1d1d'}, a.osPill);
+  a.osText = text(a.osPill, {x: 36, y: 14, 'text-anchor': 'middle', fill: '#fecaca', 'font-size': 11, 'font-weight': 800}, '');
+  a.ipText = text(g, {x: 56, y: -6, class: 'mono', fill: '#e6edf7', 'font-size': 15, 'font-weight': 700}, a.ip);
+  a.infoText = text(g, {x: 56, y: 15, fill: '#8a9bb8', 'font-size': 12.5}, '');
+  const badge = el('g', {class: 'badge', transform: 'translate(-48 -58)'}, g);
+  el('rect', {width: 96, height: 22, rx: 11, fill: '#ef4444'}, badge);
+  text(badge, {x: 48, y: 15.5, 'text-anchor': 'middle', fill: '#fff', 'font-size': 11, 'font-weight': 900, 'letter-spacing': 1}, 'QUARANTINED');
+}
+
+function refresh(a) {
+  if (!a.el) return;
+  a.el.classList.toggle('blocked', a.blocked);
+  const local = a.ip === '127.0.0.1' || a.ip === '::1';
+  a.osText.textContent = (local ? 'LOCAL' : a.os || 'UNKNOWN OS').toUpperCase();
+  a.infoText.textContent = `${a.count} hit${a.count === 1 ? '' : 's'}${a.tool ? ' · ' + a.tool : ''}`;
+}
+
+function upsert(ip, patch) {
+  let a = attackers.get(ip);
+  const isNew = !a;
+  if (!a) { a = {ip, count: 0, blocked: false, os: null, tool: null, last: 0, el: null}; attackers.set(ip, a); }
+  Object.assign(a, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== null && v !== undefined)));
+  return [a, isNew];
+}
+
+function bump(id, value) {
+  const s = $(id); s.querySelector('b').textContent = value;
+  s.classList.remove('bump'); void s.offsetWidth; s.classList.add('bump');
+}
+
+function updateStats() {
+  bump('#sCaptured', counts.captured);
+  $('#sAttackers b').textContent = attackers.size;
+  $('#sBlocked b').textContent = [...attackers.values()].filter(a => a.blocked).length;
+  $('#honeyCount').textContent = counts.captured;
+  for (const s of document.querySelectorAll('.step')) s.querySelector('em').textContent = counts[s.dataset.step];
+}
+
+// Shield curve: x(t) = 900 + 360t(1-t), y(t) = 110 + 720t
+const shieldPoint = y => { const t = Math.min(.96, Math.max(.04, (y - 110) / 720)); return [900 + 360 * t * (1 - t), 110 + 720 * t]; };
+const quad = (p0, c, p1, t) => [(1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * c[0] + t * t * p1[0], (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * c[1] + t * t * p1[1]];
+
+function animate(duration, step, done) {
+  if (reduced) { step(1); done && done(); return; }
+  const start = performance.now();
+  const frame = now => { const t = Math.min(1, (now - start) / duration); step(t); t < 1 ? requestAnimationFrame(frame) : done && done(); };
+  requestAnimationFrame(frame);
+}
+
+function fire(a, ev) {
+  if (flying >= MAX_FLYING || document.hidden) return absorbed(ev);
+  flying++;
+  const color = SEV[ev.severity] || SEV.MEDIUM;
+  const from = [1430 - 44, a.y + (Math.random() - .5) * 30];
+  const hit = shieldPoint(a.y + (Math.random() - .5) * 120);
+  const ctrl = [(from[0] + hit[0]) / 2, Math.min(from[1], hit[1]) - 60 - Math.random() * 60];
+  const fx = $('#fx');
+  const trail = el('polyline', {fill: 'none', stroke: color, 'stroke-width': 3, 'stroke-linecap': 'round', opacity: .55}, fx);
+  const head = el('circle', {r: 6, fill: color, filter: 'url(#glow)'}, fx);
+  const pts = [];
+  animate(850 + Math.random() * 300, t => {
+    const [x, y] = quad(from, ctrl, hit, t * t * (3 - 2 * t));
+    head.setAttribute('cx', x); head.setAttribute('cy', y);
+    pts.push(`${x.toFixed(1)},${y.toFixed(1)}`); if (pts.length > 14) pts.shift();
+    trail.setAttribute('points', pts.join(' '));
+  }, () => {
+    head.remove(); trail.remove(); flying--;
+    impact(hit, color, ev);
+    if (ev.quarantined) containBeam(hit, a);
+    capture(hit, color, ev);
+  });
+}
+
+function impact([x, y], color, ev) {
+  const fx = $('#fx');
+  const ring = el('circle', {cx: x, cy: y, r: 4, fill: 'none', stroke: color, 'stroke-width': 3}, fx);
+  animate(650, t => { ring.setAttribute('r', 4 + t * 70); ring.setAttribute('opacity', 1 - t); }, () => ring.remove());
+  for (let i = 0; i < 7; i++) {
+    const ang = Math.PI * (.5 + Math.random()) - Math.PI, d = 30 + Math.random() * 40;
+    const s = el('circle', {r: 2.5, fill: color}, fx);
+    animate(500, t => { s.setAttribute('cx', x + Math.cos(ang) * d * t + 20 * t); s.setAttribute('cy', y + Math.sin(ang) * d * t); s.setAttribute('opacity', 1 - t); }, () => s.remove());
+  }
+  const shield = $('#shield'); shield.classList.add('flash'); setTimeout(() => shield.classList.remove('flash'), 220);
+  const label = text(fx, {x: x + 40, y: y - 10, class: 'float', fill: color}, ev.mitre_name || ev.attack_type || 'Attack');
+  setTimeout(() => label.remove(), 1900);
+}
+
+function capture(from, color, ev) {
+  const to = [700, 470], ctrl = [820, from[1]];
+  const dot = el('circle', {r: 5, fill: '#fcd34d', filter: 'url(#glow)'}, $('#fx'));
+  animate(700, t => { const [x, y] = quad(from, ctrl, to, t); dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('r', 5 - t * 2); },
+    () => { dot.remove(); absorbed(ev); });
+}
+
+function absorbed(ev) {
+  const honey = $('#honey'); honey.classList.remove('bump'); void honey.getBBox(); honey.classList.add('bump');
+  const chip = chips[PORTS[ev.port]];
+  if (chip) { chip.classList.add('hit'); clearTimeout(chip._t); chip._t = setTimeout(() => chip.classList.remove('hit'), 900); }
+}
+
+function containBeam(from, a) {
+  const line = el('line', {x1: from[0], y1: from[1], x2: 1430 - 40, y2: a.y, stroke: '#ef4444', 'stroke-width': 4, 'stroke-dasharray': '10 8', filter: 'url(#glow)'}, $('#fx'));
+  animate(900, t => line.setAttribute('opacity', 1 - t * t), () => line.remove());
+  const toast = document.createElement('div');
+  toast.className = 'toast'; toast.textContent = `⛔ ${a.ip} quarantined by KARMA`;
+  $('#toasts').appendChild(toast); setTimeout(() => toast.remove(), 3300);
+}
+
+function feed(ev) {
+  const ul = $('#feed');
+  ul.querySelector('.empty')?.remove();
+  const li = document.createElement('li');
+  li.style.setProperty('--sev', SEV[ev.severity] || SEV.MEDIUM);
+  const time = (ev.timestamp || '').slice(11, 19) || new Date().toTimeString().slice(0, 8);
+  const cells = [[time, 't'], [ev.attacker_ip, 'mono'], [`${PORTS[ev.port] || ev.decoy_service || ''}:${ev.port ?? ''}`, ''], [ev.mitre_name || ev.attack_type || '', '']];
+  for (const [v, c] of cells) { const s = document.createElement('span'); s.textContent = v; if (c) s.className = c; li.appendChild(s); }
+  const tags = document.createElement('span');
+  const sev = document.createElement('span'); sev.className = 'tag'; sev.textContent = ev.severity || ''; tags.appendChild(sev);
+  if (ev.quarantined) { const b = document.createElement('span'); b.className = 'tag blk'; b.textContent = 'BLOCKED'; tags.appendChild(b); }
+  li.appendChild(tags);
+  ul.prepend(li);
+  while (ul.children.length > 6) ul.lastChild.remove();
+}
+
+function onEvent(ev, live = true) {
+  if (!ev || !ev.attacker_ip) return;
+  const fp = fingerprint(ev.payload);
+  const prev = attackers.get(ev.attacker_ip);
+  const [a, isNew] = upsert(ev.attacker_ip, {os: fp.os, tool: fp.tool, last: Date.now(),
+    count: (prev ? prev.count : 0) + 1, blocked: (prev && prev.blocked) || !!ev.quarantined});
+  const st = stage(ev);
+  counts.captured++; counts[st]++;
+  if (!live) return;
+  if (isNew || !a.el) layout(); else refresh(a);
+  const step = document.querySelector(`.step[data-step="${st}"]`);
+  step.classList.add('lit'); clearTimeout(step._t); step._t = setTimeout(() => step.classList.remove('lit'), 1800);
+  feed(ev);
+  fire(a, ev);
+  updateStats();
+}
+
+async function api(path) {
+  const r = await fetch(path, {credentials: 'same-origin'});
+  if (r.status === 401) { location.assign('/login'); throw new Error('login'); }
+  return r.json();
+}
+
+async function sync() {
+  try {
+    const [status, list] = await Promise.all([api('/api/status'), api('/api/attackers?limit=1000')]);
+    $('#sMode b').textContent = (status.engagement_mode || '—').toUpperCase();
+    counts.captured = status.metrics.total_attacks_logged;
+    for (const r of list) {
+      const [a] = upsert(r.ip, {count: r.total_attempts, blocked: r.status === 'QUARANTINED'});
+      if (!a.last) a.last = Date.parse(r.last_seen) || 0;
+    }
+    if (!list.length) {  // telemetry was cleared from the dashboard
+      for (const a of attackers.values()) a.el?.remove();
+      attackers.clear();
+      for (const k of ['recon', 'access', 'exec', 'contain']) counts[k] = 0;
+    }
+    layout(); updateStats();
+  } catch (e) { /* retried on next poll */ }
+}
+
+async function init() {
+  try {
+    const logs = await api('/api/logs?limit=500');
+    for (const ev of [...logs].reverse()) {
+      const fp = fingerprint(ev.payload);
+      upsert(ev.attacker_ip, {os: fp.os, tool: fp.tool});
+      counts[stage(ev)]++;
+    }
+    logs.slice(0, 6).reverse().forEach(ev => feed(ev));
+  } catch (e) { if (e.message === 'login') return; }
+  await sync();
+  setInterval(sync, 8000);
+  connect();
+}
+
+function connect() {
+  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/telemetry`);
+  const live = $('#live');
+  ws.onopen = () => { live.classList.add('on'); live.lastChild.textContent = 'LIVE'; };
+  ws.onmessage = m => { try { onEvent(JSON.parse(m.data)); } catch (e) { /* ignore malformed */ } };
+  ws.onclose = () => { live.classList.remove('on'); live.lastChild.textContent = 'RECONNECTING'; setTimeout(connect, 3000); };
+}
+
+$('#fs').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+init();
+</script>
+</body>
+</html>
