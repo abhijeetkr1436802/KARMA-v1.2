@@ -380,7 +380,7 @@ class AIChatMessage(BaseModel):
 
 class AIChatRequest(BaseModel):
     messages: list[AIChatMessage] = Field(min_length=1, max_length=12)
-    include_siem_context: bool = False
+    include_siem_context: bool = True
 
 
 @app.post("/api/ai/chat")

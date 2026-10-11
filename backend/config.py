@@ -3,7 +3,31 @@ import math
 from pathlib import Path
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _load_env_file(path):
+    """Minimal .env reader: KEY=VALUE per line, # comments, optional quotes.
+    Real environment variables always win (we only setdefault)."""
+    try:
+        for line in Path(path).read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if key:
+                os.environ.setdefault(key, val)
+    except (FileNotFoundError, OSError):
+        pass
+
+
+# Load the project-root .env first (source installs), so KARMA_DATA_DIR resolves below.
+_load_env_file(Path(BASE_DIR) / ".env")
 DATA_DIR = Path(os.environ.get("KARMA_DATA_DIR", str(Path.home() / ".karma"))).resolve()
+# Then load the per-install .env inside the data dir (where the GUI / .exe saves the key).
+_load_env_file(DATA_DIR / ".env")
+ENV_FILE = DATA_DIR / ".env"
 DB_PATH = str(DATA_DIR / "karma.db")
 LOG_DIR = DATA_DIR / "logs"
 ADMIN_TOKEN_FILE = DATA_DIR / "admin-token"
@@ -51,6 +75,28 @@ QUARANTINE_SCORE_THRESHOLD = 75
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
 DEEPSEEK_MODEL = "deepseek-chat"
+
+
+def set_deepseek_key(key):
+    """Persist the DeepSeek key to the per-install .env and apply it immediately
+    (no restart needed). Used by the desktop launcher / packaged .exe."""
+    global DEEPSEEK_API_KEY
+    key = (key or "").strip()
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    lines = []
+    if ENV_FILE.exists():
+        lines = [l for l in ENV_FILE.read_text(encoding="utf-8").splitlines()
+                 if not l.strip().startswith("DEEPSEEK_API_KEY=")]
+    if key:
+        lines.append(f"DEEPSEEK_API_KEY={key}")
+    ENV_FILE.write_text(("\n".join(lines) + "\n") if lines else "", encoding="utf-8")
+    try:
+        os.chmod(ENV_FILE, 0o600)
+    except OSError:
+        pass
+    os.environ["DEEPSEEK_API_KEY"] = key
+    DEEPSEEK_API_KEY = key
+    return bool(key)
 
 # Default Honeytokens
 DEFAULT_HONEYTOKENS = [

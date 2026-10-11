@@ -408,11 +408,11 @@ class SystemTests(unittest.TestCase):
 
     def test_ai_fallback_never_contacts_provider_without_key(self):
         from backend.engine import ai_chat, phishing_analyzer
-        with patch.object(ai_chat, "DEEPSEEK_API_KEY", ""), patch.object(ai_chat.requests, "post") as request:
+        with patch.object(config, "DEEPSEEK_API_KEY", ""), patch.object(ai_chat.requests, "post") as request:
             result = ai_chat.generate_cybersecurity_chat_response([{"role":"user", "content":"hello"}], False)
             self.assertIn("reply", result)
             request.assert_not_called()
-        with patch.object(phishing_analyzer, "DEEPSEEK_API_KEY", ""), patch.object(phishing_analyzer.requests, "post") as request:
+        with patch.object(config, "DEEPSEEK_API_KEY", ""), patch.object(phishing_analyzer.requests, "post") as request:
             result = phishing_analyzer.parse_and_analyze_eml(b"From: user@example.com\nSubject: hello\n\nhello")
             self.assertEqual(result["verdict"], "UNKNOWN")
             request.assert_not_called()

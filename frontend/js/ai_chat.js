@@ -12,7 +12,7 @@ let karmaChatHistory = [
 ];
 
 let isAiThinking = false;
-let includeSiemContext = false;
+let includeSiemContext = true;  // always ground answers in live attack telemetry
 
 document.addEventListener("DOMContentLoaded", () => {
     initKarmaAiChat();

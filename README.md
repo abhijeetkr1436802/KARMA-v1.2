@@ -19,6 +19,33 @@ For a terminal server without Tkinter:
 python run.py --headless
 ```
 
+### Configuration with a `.env` file
+
+Wherever you download KARMA, create a file named **`.env`** in the project root (copy
+`.env.example` to `.env` and edit it). KARMA loads it automatically on startup — from the
+project folder and from the data dir (`%USERPROFILE%/.karma`). Real environment variables
+always take precedence over `.env`.
+
+Minimal `.env` (only the AI key is commonly needed; everything else has defaults):
+
+```env
+# Enables free-form AI Copilot chat. Without it, the offline analyst still
+# answers from live telemetry — no internet required.
+DEEPSEEK_API_KEY=sk-your-deepseek-key-here
+
+# Optional overrides (defaults shown):
+# KARMA_DOMAIN=karma-honeypot.com
+# KARMA_ADMIN_TOKEN=<your own 32+ character random secret>
+# KARMA_ENGAGEMENT_MODE=contain
+```
+
+`.env` is git-ignored, so your key never gets committed. Restart KARMA after editing it.
+
+**Or add the key from the GUI (works in the packaged `.exe`):** launch `python run.py`,
+and in the desktop control panel use the **AI Copilot — DeepSeek API Key** field →
+**Save Key**. It writes the key to `%USERPROFILE%/.karma/.env` and applies it immediately,
+with no restart and no code access needed — ideal after building the executable.
+
 Visit `http://localhost:8000`. On first startup a random admin token is saved to `%USERPROFILE%/.karma/admin-token`. Read that file locally and enter the token on the login page. Do not paste the token into chat or source control. Set `KARMA_ADMIN_TOKEN` to supply your own 32+ character random secret.
 
 The management console is loopback-only in development, including API and WebSocket access. Browser sessions expire after eight hours. API clients use `Authorization: Bearer <token>`. Cookie-authenticated mutations require `X-Karma-Request: 1`; the dashboard supplies it automatically. Changing the token and restarting invalidates existing sessions.
@@ -50,6 +77,40 @@ Then start KARMA with `python run.py`, launch the server and open:
 
 The dashboard stays private to the KARMA PC; attackers only reach the decoys.
 Without the certificate, KARMA falls back to `http://localhost:8000`.
+
+### Manual setup (exactly what the script does, if you prefer to run steps by hand)
+
+Run each in an **Administrator PowerShell** in the repo folder:
+
+```powershell
+# 1. Point the domain at this PC (dashboard stays loopback-only)
+Add-Content "$env:SystemRoot\System32\drivers\etc\hosts" "`r`n127.0.0.1 karma-honeypot.com www.karma-honeypot.com"
+ipconfig /flushdns
+
+# 2. Create the HTTPS certificate and trust its local CA (enables https://karma-honeypot.com)
+python tools\make_cert.py
+Import-Certificate -FilePath "$env:USERPROFILE\.karma\tls\karma-local-ca.pem" -CertStoreLocation Cert:\LocalMachine\Root
+
+# 3. Allow the attacker PCs to reach the decoys through Windows Firewall
+New-NetFirewallRule -DisplayName 'KARMA Honeypot' -Direction Inbound -Program (Get-Command python).Source -Action Allow -Profile Any
+
+# 4. Show this PC's LAN IP (the attacker PCs target this)
+Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' } | Select IPAddress
+```
+
+To undo later: remove the `127.0.0.1 karma-honeypot.com` line from the hosts file,
+delete the `KARMA Honeypot` firewall rule, and remove the **KARMA Local Demo CA**
+from `certmgr.msc` → Trusted Root Certification Authorities.
+
+### Network setup for the demo
+
+All three PCs must be on the **same network** so the attackers can reach the KARMA PC's LAN IP:
+
+- Easiest: turn on the KARMA PC's **mobile hotspot** and connect both attacker PCs to it, or put all
+  three on the same Wi-Fi/switch.
+- Attackers on a **different** network/router cannot reach the honeypot (private IPs behind NAT) unless
+  you port-forward on the router — avoid that for a classroom demo.
+- Find the target IP with the command in step 4 above; attackers use that as `<KARMA-IP>`.
 
 **Attack script.** Replace `<KARMA-IP>` with the printed LAN IP:
 
@@ -84,6 +145,22 @@ The previous public traps on port 8000 have moved to 8080. The misleading demo �
 
 Quarantine blocks new connections and subsequent interactions on KARMA sensors. It does **not** install OS firewall rules or isolate machines from other services. A triggering SSH login may now be rejected and later connections blocked; unblock the testing IP in the dashboard before repeating a demonstration. Desktop testing remains available from the launcher; the web API cannot launch desktop windows or attack simulations.
 
+## AI SOC copilot
+
+The **AI SOC Assistant** tab always has full context of the live telemetry — every attack,
+attacker, MITRE technique and quarantine — and answers like a Tier-3 analyst. Ask things like:
+
+- `tell me about 192.168.137.5` — full forensic profile of one attacker IP
+- `top attackers`, `recent events`, `how many attacks`, `situation report`
+- `explain T1110`, `show the MITRE breakdown`
+- `ssh attacks`, `sql injection`, `honeytoken hits`, `what is quarantined`
+
+With no `DEEPSEEK_API_KEY` set (the default), a built-in **offline analyst** answers these by
+reading the live database directly — no data leaves the machine, and it needs no internet, so it
+works in the exam hall. Set `DEEPSEEK_API_KEY` to also get free-form expert chat; the live
+telemetry snapshot is then included in every request to DeepSeek (headers and the SIEM summary),
+which is the only case where data leaves the PC.
+
 ## Production deployment
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for TLS, service operation, backups, retention, upgrades, and operational limits. This repository includes hardening and regression tests; production readiness still requires validation on your actual host and traffic profile.
@@ -93,7 +170,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for TLS, service operation, backups, retentio
 - Event/attacker reports and MITRE mappings are deterministic heuristics, not external AI verdicts.
 - Private LAN/loopback addresses use Bengaluru, India as an explicitly **configured lab location**, not a measured attacker origin. Public addresses remain unknown without a geolocation provider. See `.env.example` to disable or change the lab marker.
 - Without `DEEPSEEK_API_KEY`, chat/email analysis falls back locally. The email heuristic does not certify a message as legitimate.
-- Configured email analysis sends headers and up to 2,500 characters of body text to DeepSeek. Chat sends the selected conversation history. Sending live SIEM context is opt-in in the dashboard.
+- Configured email analysis sends headers and up to 2,500 characters of body text to DeepSeek. Chat sends the selected conversation history plus the live SIEM telemetry snapshot. This external send happens ONLY when DEEPSEEK_API_KEY is set; with no key the offline analyst reads the local database and nothing leaves the machine.
 - Email `Authentication-Results` headers are untrusted input. SPF/DKIM is not independently verified. Outlook binary `.msg` is unsupported; export RFC822 `.eml` instead.
 - Captured SSH/web login passwords are redacted; arbitrary attack payloads can still contain sensitive data. Restrict access to the data directory and backups.
 - Generated API keys/credential honeytokens are decoy strings, not provider-managed keys. They do not detect use outside KARMA. Custom URL tokens are routed by the web sensor.

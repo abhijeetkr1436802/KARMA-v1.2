@@ -15,6 +15,7 @@ import uvicorn
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.config import HOST, PORT_API, DASHBOARD_URL, TLS_ENABLED, TLS_CERT, TLS_KEY
+from backend import config
 from backend.decoy_state import DECOYS, toggle_decoy, initialize_decoys
 from backend.database import init_db
 
@@ -159,6 +160,39 @@ class KarmaPreflightLauncher:
         self.entry_ftp_banner.insert(0, "220 ProFTPD 1.3.5 Server Ready.")
         self.entry_ftp_banner.grid(row=1, column=1, padx=10, pady=4)
 
+        # DeepSeek AI API key (enables free-form AI chat; offline analyst works without it)
+        lbl_ai = tk.Label(
+            main_frame, text="AI Copilot — DeepSeek API Key (optional):",
+            font=("Segoe UI", 10, "bold"), bg="#0f172a", fg="#e2e8f0")
+        lbl_ai.pack(anchor="w", pady=(5, 6))
+
+        ai_frame = tk.Frame(main_frame, bg="#1e293b", padx=12, pady=10)
+        ai_frame.pack(fill="x", pady=(0, 15))
+        self.entry_api_key = tk.Entry(ai_frame, font=("Consolas", 9), bg="#0f172a",
+                                      fg="#38bdf8", insertbackground="white", width=40, show="*")
+        self.entry_api_key.grid(row=0, column=0, padx=(0, 8), pady=4, sticky="we")
+        if config.DEEPSEEK_API_KEY:
+            self.entry_api_key.insert(0, config.DEEPSEEK_API_KEY)
+        self._key_shown = False
+
+        def _toggle_key():
+            self._key_shown = not self._key_shown
+            self.entry_api_key.config(show="" if self._key_shown else "*")
+            btn_show.config(text="Hide" if self._key_shown else "Show")
+
+        btn_show = tk.Button(ai_frame, text="Show", font=("Segoe UI", 9), bg="#334155",
+                             fg="#ffffff", relief="flat", cursor="hand2", command=_toggle_key)
+        btn_show.grid(row=0, column=1, padx=4)
+        tk.Button(ai_frame, text="💾 Save Key", font=("Segoe UI", 9, "bold"), bg="#0070f3",
+                  fg="#ffffff", relief="flat", cursor="hand2", command=self.save_api_key).grid(row=0, column=2, padx=4)
+        tk.Button(ai_frame, text="Clear", font=("Segoe UI", 9), bg="#475569",
+                  fg="#ffffff", relief="flat", cursor="hand2", command=self.clear_api_key).grid(row=0, column=3, padx=4)
+        ai_frame.columnconfigure(0, weight=1)
+        status = "configured ✓" if config.DEEPSEEK_API_KEY else "not set (offline analyst active)"
+        self.lbl_ai_status = tk.Label(ai_frame, text=f"Status: {status}", font=("Segoe UI", 8),
+                                      bg="#1e293b", fg="#94a3b8")
+        self.lbl_ai_status.grid(row=1, column=0, columnspan=4, sticky="w", pady=(6, 0))
+
         # Button Container (Launch Server + Tester Button)
         btn_box = tk.Frame(main_frame, bg="#0f172a")
         btn_box.pack(fill="x", pady=(0, 10))
@@ -200,6 +234,24 @@ class KarmaPreflightLauncher:
         self.txt_log = tk.Text(main_frame, height=7, bg="#020617", fg="#10b981", font=("Consolas", 9), wrap="word")
         self.txt_log.pack(fill="both", expand=True)
         self.txt_log.insert("end", "[+] Desktop Control Panel Ready. Select enabled decoys and click 'LAUNCH K.A.R.M.A SIEM SERVER'.\n")
+
+    def save_api_key(self):
+        key = self.entry_api_key.get().strip()
+        try:
+            ok = config.set_deepseek_key(key)
+        except Exception as exc:
+            messagebox.showerror("KARMA", f"Could not save API key: {exc}")
+            return
+        if ok:
+            self.lbl_ai_status.config(text="Status: configured ✓ (saved to .env, active now)")
+            self.log("[+] DeepSeek API key saved. AI Copilot now uses DeepSeek.")
+        else:
+            self.lbl_ai_status.config(text="Status: not set (offline analyst active)")
+            self.log("[+] DeepSeek API key cleared. AI Copilot uses the offline analyst.")
+
+    def clear_api_key(self):
+        self.entry_api_key.delete(0, "end")
+        self.save_api_key()
 
     def open_tester_gui(self):
         from backend.tester_gui import launch_tester_gui
