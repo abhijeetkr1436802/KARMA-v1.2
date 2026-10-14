@@ -73,7 +73,7 @@ allows Python through Windows Firewall on every network profile, warns about bus
 Then start KARMA with `python run.py`, launch the server and open:
 
 - `https://karma-honeypot.com` for the dashboard
-- `https://karma-honeypot.com/visualizer` for the live shield diagram. Press **Fullscreen** on the projector.
+- `https://karma-honeypot.com/visualizer` for the live attack map (attacks aimed at production get pulled into the honeypot). Press **Fullscreen** on the projector.
 
 The dashboard stays private to the KARMA PC; attackers only reach the decoys.
 Without the certificate, KARMA falls back to `http://localhost:8000`.
@@ -112,25 +112,52 @@ All three PCs must be on the **same network** so the attackers can reach the KAR
   you port-forward on the router — avoid that for a classroom demo.
 - Find the target IP with the command in step 4 above; attackers use that as `<KARMA-IP>`.
 
-**Attack script.** Replace `<KARMA-IP>` with the printed LAN IP:
+**Before going live (every rehearsal and the real demo):** in the dashboard set the mode to
+**Contain**, and in **Attacker Profiles** unblock both attacker IPs. Both settings are saved between runs.
 
-| Stage | Linux attacker | Windows attacker |
+**Attack script.** Replace `<KARMA-IP>` with the printed LAN IP. Run the rows top to bottom: everything
+before the **Finale** only raises the threat score; the Finale quarantines that attacker.
+
+The story: the attacker scouts the web portal, finds a leaked deploy file on the file server, and then
+*uses* the stolen secrets. The secrets are honeytokens, so the moment they are used KARMA knows.
+
+| Stage | Linux attacker | Windows attacker (PowerShell + Edge) |
 | --- | --- | --- |
-| Recon | `nmap -sT -sV -p 21,23,2222,3389,8080 <KARMA-IP>` | `nmap -sT -p 21,23,2222,3389,8080 <KARMA-IP>` (if Nmap is installed) or `Test-NetConnection <KARMA-IP> -Port 2222` |
-| Web probe | `curl "http://<KARMA-IP>:8080/?id=1+UNION+SELECT+password+FROM+users"` | Open `http://<KARMA-IP>:8080` in Edge |
-| Honeytoken | `curl http://<KARMA-IP>:8080/api/v1/auth/keys` | Edge: `http://<KARMA-IP>:8080/secret-vault-admin-login-php` |
-| Break-in | `ssh root@<KARMA-IP> -p 2222` (any password), then `ls`, `cd /srv/company`, `cat contacts.csv` | Same in PowerShell `ssh` (built into Windows 10/11) |
-| Escalation | `whoami` or `cat /etc/passwd` inside the SSH session | Same |
-| FTP loot | `ftp <KARMA-IP>`, user `Admin` | `ftp <KARMA-IP>`, user `Admin` |
+| Recon | `nmap -sT -sV -p 21,23,2222,3389,8080 <KARMA-IP>` | `Test-NetConnection <KARMA-IP> -Port 2222` (or Nmap) |
+| Web recon | `curl http://<KARMA-IP>:8080/robots.txt` (lists the hidden admin and API paths), then `curl http://<KARMA-IP>:8080/` and read the `TODO(dev)` comment at the bottom | Open `http://<KARMA-IP>:8080` in Edge, press Ctrl+U to view source, read the `TODO(dev)` comment |
+| Break-in | `ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@<KARMA-IP> -p 2222` (any password), then `ls`, `cd /srv/company`, `cat contacts.csv`, `exit` | Same in PowerShell `ssh`, with `UserKnownHostsFile=NUL`; then `cat /srv/company/operations/deploy.env` and `exit` |
+| Loot the secrets | `ftp -p <KARMA-IP>`, user `Admin` (any password), `cd operations`, `get deploy.env`, `bye`, then `cat deploy.env` | (already read `deploy.env` over SSH above) |
+| **Finale** | Use the stolen API key: `curl -H "X-API-Key: <API_KEY from deploy.env>" http://<KARMA-IP>:8080/api/v1/admin/db_export` | Log in with the stolen credentials: `ssh root@<KARMA-IP> -p 2222`, password from `STAGING_SSH` in deploy.env. KARMA rejects it and quarantines the PC |
+| Proof of containment | Re-run any command: refused, shown as **BLOCKED** | Re-run the `ssh` or refresh the web page: refused, shown as **BLOCKED** |
+
+Other finales that also quarantine (use one per attacker, or unblock between them):
+
+- **SQL injection:** `curl "http://<KARMA-IP>:8080/?id=1+UNION+SELECT+password+FROM+users"`, or type `' OR 1=1 --` as the username on the portal's login form.
+- **Hidden admin URL:** click **Backdoor Recovery Console (Legacy)** on the portal, or open `/secret-vault-admin-login-php`.
+- **API trap without a key:** `curl http://<KARMA-IP>:8080/api/v1/auth/keys`.
+- **Dangerous shell command:** `whoami` or `cat /etc/passwd` inside the SSH session.
+
+In *Observe* mode none of these block, so you can rehearse the whole story; the Honeytoken Vault
+tab still counts each use. Windows PowerShell's `curl` is an alias; use `curl.exe` for the commands above.
 
 Use `nmap -sT` (connect scan): the default root SYN scan (`-sS`) never completes a TCP connection,
-so no honeypot can see it. The visualizer labels each attacker's OS from its SSH client banner or
+so no honeypot can see it. Keep `-sV` so Nmap sends an HTTP request; a bare connect to 8080 is not logged.
+The visualizer labels each attacker's OS from its SSH client banner or
 browser user agent (Nmap and curl don't reveal an OS).
+
+The `-o StrictHostKeyChecking=no ...` options stop OpenSSH from refusing to connect if KARMA's SSH
+host key changed (for example after deleting `%USERPROFILE%\.karma`).
+Windows' built-in `ftp.exe` only supports active mode, so `ls`/`get` need the KARMA PC to connect back
+through the attacker's firewall and usually fail with `425`; list and download files from the Linux attacker.
 
 **Contain vs Observe.** In *Contain* mode scans, page views and logins are logged but never
 blocked. Only high-risk actions (SQL injection, honeytokens, `whoami`/`cat /etc/...`) quarantine
-the attacker, which ends the demo on a "contained" moment. Use *Observe* to explore the fake shell
-freely, and unblock attacker IPs in the dashboard between rehearsals.
+the attacker. After that, every new attempt from that IP is refused and logged as **BLOCKED** (at most
+one entry per port every 10 seconds). Use *Observe* to explore the fake shell freely.
+
+**Offline network:** the dashboard maps use Esri satellite imagery (OpenStreetMap as fallback) and the
+pages load fonts from the internet. Without internet the maps say so instead of showing tiles; everything else works.
+Don't press **Show** next to the DeepSeek key in the launcher while projecting.
 
 ## Network surfaces
 

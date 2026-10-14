@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, IPvAnyAddress
 from starlette.concurrency import run_in_threadpool
-from backend import config, database as db
+from backend import config, database as db, notifier
 from backend.security import RequestGuard, load_admin_token, session_value, COOKIE_NAME, SESSION_SECONDS
 from backend.engine.csv_logger import audit_csv_logger
 from backend.engine.active_defense import active_defense_engine
@@ -52,6 +52,7 @@ class ConnectionManager:
         if event:
             event["quarantined"] = data.get("quarantined", False)
             audit_csv_logger.log_event(event)
+            notifier.on_event(event)
             if self.loop and self.loop.is_running():
                 self.loop.call_soon_threadsafe(self.enqueue, event)
 
@@ -72,21 +73,14 @@ ai_slots = asyncio.Semaphore(4)
 
 @asynccontextmanager
 async def lifespan(app):
-    from backend.runtime import InstanceLock
+    from backend.runtime import InstanceLock, ignore_connection_reset
     with InstanceLock():
         app.state.admin_token = load_admin_token()
         await run_in_threadpool(db.init_db)
         await run_in_threadpool(initialize_decoys)
         await run_in_threadpool(active_defense_engine.load_mode)
         loop = manager.loop = asyncio.get_running_loop()
-        # Windows ProactorEventLoop logs a traceback whenever a client (browser,
-        # scanner, attacker) drops a TCP connection. Harmless on a honeypot, so
-        # swallow just that; everything else uses asyncio's default handler.
-        def _ignore_reset(loop, context):
-            if isinstance(context.get("exception"), ConnectionResetError):
-                return
-            loop.default_exception_handler(context)
-        loop.set_exception_handler(_ignore_reset)
+        loop.set_exception_handler(ignore_connection_reset)
         audit_csv_logger.start()
         try:
             if config.ENABLE_SENSORS:
@@ -109,18 +103,29 @@ def health():
     return {"status": "ok"}
 
 
+LOGIN_PAGE = """<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>KARMA sign in</title><style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b1120;color:#f8fafc;font:16px 'Segoe UI',system-ui,sans-serif}
+main{width:min(420px,calc(100% - 32px));background:#172033;border-radius:24px;padding:36px 32px}
+h1{margin:0 0 6px;font-size:28px;letter-spacing:.04em}h1 b{color:#3b82f6}
+p{margin:0 0 24px;color:#cbd5e1;line-height:1.55}label{font-weight:600}
+input{box-sizing:border-box;width:100%;margin:8px 0 16px;padding:14px;border:0;border-radius:14px;background:#0b1120;color:#f8fafc;font:inherit}
+input:focus,button:focus-visible{outline:3px solid #3b82f6;outline-offset:2px}
+button{width:100%;padding:14px;border:0;border-radius:14px;background:#3b82f6;color:#fff;font-family:inherit;font-size:16px;font-weight:700;cursor:pointer}
+button:hover{background:#2563eb}.err{margin:0 0 16px;padding:12px 14px;border-radius:12px;background:#450a0a;color:#fecaca}
+</style><main><h1>K.A.R.M.A <b>SIEM</b></h1><p>Operator sign in. Your admin token is in the KARMA data folder (<code>admin-token</code>).</p>
+{error}<form method="post" action="/login"><label for="token">Admin token</label><input id="token" name="token" type="password" required autofocus autocomplete="current-password"><button>Sign in</button></form></main></html>"""
+
+
 @app.get("/login", response_class=HTMLResponse)
-def login_page():
-    return """<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>KARMA sign in</title><style>body{background:#101726;color:#eee;font:18px system-ui;max-width:440px;margin:12vh auto;padding:24px}input,button{box-sizing:border-box;width:100%;padding:14px;margin-top:16px}p{line-height:1.6}</style>
-<h1>KARMA operator sign in</h1><p>Enter the admin token configured for this installation. Local installations store the generated token in the KARMA data directory.</p>
-<form method="post" action="/login"><label for="token">Admin token</label><input id="token" name="token" type="password" required autocomplete="current-password"><button>Sign in</button></form></html>"""
+def login_page(error: bool = False):
+    return LOGIN_PAGE.replace('{error}', '<p class="err" role="alert">That token is not correct. Try again.</p>' if error else '')
 
 
 @app.post("/login")
 def login(request: Request, token: str = Form(..., max_length=512)):
     if not secrets.compare_digest(token, request.app.state.admin_token):
-        raise HTTPException(401, "Invalid credentials")
+        return RedirectResponse("/login?error=1", status_code=303)
     response = RedirectResponse("/", status_code=303)
     response.set_cookie(COOKIE_NAME, session_value(request.app.state.admin_token),
                         httponly=True, secure=config.COOKIE_SECURE, samesite="strict", max_age=SESSION_SECONDS)
@@ -387,6 +392,34 @@ class AIChatRequest(BaseModel):
 async def chat(req: AIChatRequest):
     from backend.engine.ai_chat import generate_cybersecurity_chat_response
     return await run_ai(generate_cybersecurity_chat_response, [m.model_dump() for m in req.messages], req.include_siem_context)
+
+
+class NotifyRequest(BaseModel):
+    ntfy_topic: str = Field(default="", max_length=64)
+    email_to: str = Field(default="", max_length=254)
+    smtp_user: str = Field(default="", max_length=254)
+    smtp_password: str = Field(default="", max_length=128)
+    smtp_host: str = Field(default="", max_length=253)
+
+
+@app.get("/api/notify")
+def notify_settings():
+    return notifier.public_settings()
+
+
+@app.post("/api/notify")
+def notify_save(payload: NotifyRequest):
+    try:
+        return notifier.save(payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/api/notify/test")
+async def notify_test():
+    result = await run_in_threadpool(notifier.send, "KARMA: test alert",
+                                     "This is a test. KARMA will alert you here when an attack starts.")
+    return {"result": result}
 
 
 @app.get("/api/ai/status")

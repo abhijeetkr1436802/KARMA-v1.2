@@ -21,8 +21,8 @@ context.renderDocumentEvents([{timestamp:'2026-10-08',attack_type:'Document inte
 assert(!container.innerHTML.includes('<img'));
 assert(container.innerHTML.includes('&lt;img'));
 const markers = [];
-context.L = {circleMarker(location) {const marker = {location,bindPopup(html) {this.popup=html;},bindTooltip(text) {this.tooltip=text;}}; markers.push(marker); return marker;}};
-vm.runInContext('leafMap = {}; mapMarkersLayer = {clearLayers(){},addLayer(){}};',context);
+context.L = {latLngBounds(points) {return {points, pad() {return this;}};}, circleMarker(location) {const marker = {location,bindPopup(html) {this.popup=html;},bindTooltip(text) {this.tooltip=text;}}; markers.push(marker); return marker;}};
+vm.runInContext('leafMap = {getSize() {return {x: 0};}}; mapMarkersLayer = {clearLayers(){},addLayer(){}};',context);
 context.updateMapMarkers([
  {ip:'192.168.137.1',lat:12.9716,lng:77.5946,city:'Bengaluru',country:'India',geo_source:'configured_lab',geo_label:'Configured lab location',total_attempts:1,max_risk_score:25},
  {ip:'8.8.8.8',lat:null,lng:null},

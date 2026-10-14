@@ -6,12 +6,14 @@ Simulates vulnerability web services, traps SQL Injection, XSS, and Path Travers
 from backend.database import mark_event_quarantine
 
 from fastapi import FastAPI, Request, Form, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+import asyncio
 import uvicorn
 import threading
 import time
 from backend.config import PORT_WEB_HONEYPOT, SENSOR_HOST
 from backend.security import RequestGuard
+from backend.sensors.tcp_server import bind_listener, report_blocked
 from backend.database import is_quarantined, get_attempt_count
 import socket
 from backend.engine.mitre_mapper import map_payload_to_mitre
@@ -27,6 +29,7 @@ async def enforce_sensor_access(request, call_next):
     if not is_decoy_enabled("web_8080"):
         return JSONResponse({"detail": "Sensor disabled"}, status_code=503)
     if request.client and is_quarantined(request.client.host):
+        report_blocked(request.client.host, PORT_WEB_HONEYPOT, "WEB_HONEYPOT")
         return JSONResponse({"detail": "Blocked on KARMA sensors"}, status_code=403)
     return await call_next(request)
 
@@ -187,6 +190,8 @@ HTML_TEMPLATE = """
             <button type="submit">Authenticate to Vault</button>
         </form>
         <a href="/secret-vault-admin-login-php">Backdoor Recovery Console (Legacy)</a>
+        <!-- TODO(dev): remove before go-live. Integration API: GET /api/v1/auth/keys and /api/v1/admin/db_export,
+             send the deploy key in the X-API-Key header (see operations/deploy.env on the file server). -->
         <div class="notice">Restricted Corporate System. All access attempts are profiled and logged into SIEM.</div>
     </div>
 </body>
@@ -198,12 +203,16 @@ def process_web_attack(client_ip, path, method, payload, agent=""):
     if not is_decoy_enabled("web_8080"):
         return
 
-    # Check for Honeytoken URL hit
-    is_honeytoken = "secret-vault-admin" in path or "AKIAIOSF" in payload or path.startswith("/api/v1/") or "Honeytoken" in payload
+    # Check for Honeytoken URL hit, or a planted (decoy) API key presented in any request
+    from backend.honeytokens import tokens_used_in
+    used_keys = tokens_used_in(payload, "API Key")
+    is_honeytoken = used_keys or "secret-vault-admin" in path or path.startswith("/api/v1/") or "Honeytoken" in payload
     if is_honeytoken:
         if "secret-vault-admin" in path:
             record_honeytoken_hit("ht-admin-url", client_ip)
-        elif path.endswith("/keys") or "AKIAIOSF" in payload:
+        for token in used_keys:
+            record_honeytoken_hit(token["token_id"], client_ip)
+        if path.endswith("/keys") and not used_keys:
             record_honeytoken_hit("ht-aws-01", client_ip)
         attack_type = "Honeytoken Compromise"
         service = "HONEYTOKEN"
@@ -274,6 +283,19 @@ def post_login(request: Request, username: str = Form(...), password: str = Form
     process_web_attack(client_ip, "/login", "POST", payload, request.headers.get("user-agent", ""))
     return HTMLResponse(content="<script>alert('Invalid Authentication Credentials'); window.location.href='/';</script>")
 
+def presented_key(request):
+    """API key the client sent, so a stolen decoy key is recognised when it is used."""
+    key = request.headers.get("x-api-key") or request.headers.get("authorization", "") or request.query_params.get("api_key", "")
+    return f" | API key: {key[:200]}" if key else ""
+
+
+@web_decoy_app.get("/robots.txt", response_class=PlainTextResponse)
+def robots(request: Request):
+    # Classic recon breadcrumb: "hidden" paths an attacker will try next.
+    process_web_attack(request.client.host, "/robots.txt", "GET", "", request.headers.get("user-agent", ""))
+    return "User-agent: *\nDisallow: /secret-vault-admin-login-php\nDisallow: /api/v1/\n"
+
+
 @web_decoy_app.get("/api/v1/auth/keys")
 @web_decoy_app.get("/api/v1/admin/db_export")
 def api_trap(request: Request):
@@ -281,7 +303,7 @@ def api_trap(request: Request):
     key = "api_auth_keys" if request.url.path.endswith("keys") else "api_db_export"
     if not is_decoy_enabled(key):
         return JSONResponse({"detail": "Not found"}, status_code=404)
-    process_web_attack(request.client.host, request.url.path, "GET", "Honeytoken URL Triggered", request.headers.get("user-agent", ""))
+    process_web_attack(request.client.host, request.url.path, "GET", "Honeytoken URL Triggered" + presented_key(request), request.headers.get("user-agent", ""))
     return JSONResponse({"detail": "Access denied"}, status_code=403)
 
 @web_decoy_app.get('/documents/{token}', response_class=HTMLResponse)
@@ -322,7 +344,7 @@ def catch_all(request: Request, full_path: str):
             record_honeytoken_hit(token["token_id"], client_ip)
             process_web_attack(client_ip, "/" + full_path, request.method, "Honeytoken URL Triggered", request.headers.get("user-agent", ""))
             return HTMLResponse("Access denied", status_code=403)
-    process_web_attack(client_ip, f"/{full_path}", request.method, str(request.query_params), request.headers.get("user-agent", ""))
+    process_web_attack(client_ip, f"/{full_path}", request.method, str(request.query_params) + presented_key(request), request.headers.get("user-agent", ""))
     return HTMLResponse(content="<h1>404 Not Found</h1>", status_code=404)
 
 class WebHoneypotServer:
@@ -337,19 +359,13 @@ class WebHoneypotServer:
         return bool(self.server and self.server.started and self.thread and self.thread.is_alive())
 
     def start(self):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
-            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
-        else:
-            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.socket = bind_listener(self.host, self.port)
         try:
-            self.socket.bind((self.host, self.port))
-            self.socket.listen(32)
             config = uvicorn.Config(web_decoy_app, host=self.host, port=self.port,
                                     log_level="warning", proxy_headers=False,
                                     limit_concurrency=64, timeout_keep_alive=5, timeout_graceful_shutdown=5)
             self.server = uvicorn.Server(config)
-            self.thread = threading.Thread(target=self.server.run, kwargs={"sockets": [self.socket]}, daemon=True)
+            self.thread = threading.Thread(target=asyncio.run, args=(self._serve(),), daemon=True)
             self.thread.start()
             deadline = time.monotonic() + 5
             while not self.server.started and self.thread.is_alive() and time.monotonic() < deadline:
@@ -359,6 +375,11 @@ class WebHoneypotServer:
         except BaseException:
             self.stop()
             raise
+
+    async def _serve(self):
+        from backend.runtime import ignore_connection_reset
+        asyncio.get_running_loop().set_exception_handler(ignore_connection_reset)
+        await self.server.serve(sockets=[self.socket])
 
     def stop(self):
         if self.server:

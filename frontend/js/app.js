@@ -24,8 +24,7 @@ let leafMap = null;
 let mapMarkersLayer = null;
 let threatsMap = null;
 let threatsMarkersLayer = null;
-let tileLayer1 = null;
-let tileLayer2 = null;
+let mapBounds = null;
 
 document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('timeFilterSelect')?.addEventListener('change', fetchDashboardData);
@@ -50,11 +49,6 @@ function initTheme() {
 function setTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('siem_theme', theme);
-
-    // Update Leaflet Map Tiles if map exists
-    if (leafMap || threatsMap) {
-        updateMapTiles(theme);
-    }
 
     // Synchronize Chart.js colors with Clay Theme
     if (typeof getChartColors === 'function') {
@@ -108,31 +102,51 @@ function initLeafletMap() {
         threatsMarkersLayer = L.layerGroup().addTo(threatsMap);
     }
 
-    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
-    updateMapTiles(currentTheme);
+    for (const m of [leafMap, threatsMap]) if (m) addBasemap(m);
 }
 
-function updateMapTiles(theme) {
-    const isDark = theme === 'dark';
-    const tileUrl = isDark
-        ? 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'
-        : 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}';
-    const tileOptions = {
-        maxZoom: 16,
-        // Identify tile requests without sending the dashboard path or query string.
-        referrerPolicy: 'strict-origin-when-cross-origin',
-        attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>, and the GIS user community'
-    };
-
-    if (leafMap) {
-        if (tileLayer1) leafMap.removeLayer(tileLayer1);
-        tileLayer1 = L.tileLayer(tileUrl, tileOptions).addTo(leafMap);
+// Basemaps tried in order: Esri satellite imagery with place labels, then OpenStreetMap.
+const BASEMAPS = [
+    {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        labels: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+        maxZoom: 18,
+        attribution: 'Imagery &copy; <a href="https://www.esri.com/">Esri</a>, Maxar, Earthstar Geographics &amp; the GIS User Community'
+    },
+    {
+        url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }
+];
 
-    if (threatsMap) {
-        if (tileLayer2) threatsMap.removeLayer(tileLayer2);
-        tileLayer2 = L.tileLayer(tileUrl, tileOptions).addTo(threatsMap);
+function addBasemap(map, i = 0) {
+    const base = BASEMAPS[i];
+    if (!base) {
+        map.getContainer().classList.add('map-offline');  // every source failed: say so instead of a grey box
+        return;
     }
+    const options = { maxZoom: base.maxZoom, referrerPolicy: 'strict-origin-when-cross-origin', attribution: base.attribution };
+    const layers = [L.tileLayer(base.url, options)];
+    if (base.labels) layers.push(L.tileLayer(base.labels, { ...options, attribution: '' }));
+    let loaded = 0, failed = 0;
+    layers[0].on('tileload', () => { loaded++; map.getContainer().classList.remove('map-offline'); });
+    layers[0].on('tileerror', () => {
+        // ponytail: falls back after 4 failures with nothing loaded; a flaky link may still mix in grey tiles
+        if (++failed === 4 && !loaded) {
+            layers.forEach(l => map.removeLayer(l));
+            addBasemap(map, i + 1);
+        }
+    });
+    map.setMaxZoom(base.maxZoom);
+    layers.forEach(l => l.addTo(map));
+}
+
+// Zoom each map onto the attackers once, when it is visible (a map in a hidden tab has no size yet).
+function fitMap(map) {
+    if (!map || !mapBounds || map._karmaFitted || !map.getSize().x) return;
+    map.fitBounds(mapBounds.pad(0.5), { maxZoom: 12 });
+    map._karmaFitted = true;
 }
 
 function updateMapMarkers(attackers) {
@@ -197,6 +211,12 @@ function updateMapMarkers(attackers) {
             threatsMarkersLayer.addLayer(marker2);
         }
     });
+
+    if (mapped.length && !mapBounds) {
+        mapBounds = L.latLngBounds(mapped.map(a => [a.lat, a.lng]));
+        fitMap(leafMap);
+        fitMap(threatsMap);
+    }
 }
 
 let dashboardRefreshTimer = null;
@@ -687,6 +707,8 @@ function setupEventListeners() {
             setTimeout(() => {
                 if (leafMap) leafMap.invalidateSize();
                 if (threatsMap) threatsMap.invalidateSize();
+                fitMap(leafMap);
+                fitMap(threatsMap);
             }, 200);
         });
     });
@@ -914,3 +936,45 @@ function escapeHTML(str) {
         tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
     );
 }
+
+// PHONE & E-MAIL ALERTS
+async function loadAlertSettings() {
+    const form = document.getElementById('alertForm');
+    if (!form) return;
+    const s = await (await fetch('/api/notify')).json();
+    form.ntfy_topic.value = s.ntfy_topic;
+    form.email_to.value = s.email_to;
+    form.smtp_user.value = s.smtp_user;
+    form.smtp_host.value = s.smtp_host;
+    form.smtp_password.placeholder = s.has_password ? 'Saved (leave empty to keep)' : '16 characters';
+    document.getElementById('alertQuiet').textContent = s.quiet_minutes;
+    document.getElementById('alertStatus').textContent = 'Last alert: ' + s.last_result;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('alertForm');
+    if (!form) return;
+    const status = document.getElementById('alertStatus');
+    form.addEventListener('submit', async e => {
+        e.preventDefault();
+        try {
+            await fetch('/api/notify', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(Object.fromEntries(new FormData(form)))});
+            form.smtp_password.value = '';
+            await loadAlertSettings();
+            status.textContent = 'Saved. ' + status.textContent;
+        } catch (err) { status.textContent = 'Not saved: ' + err.message; }
+    });
+    document.getElementById('alertTest').addEventListener('click', async () => {
+        status.textContent = 'Sending test…';
+        try { status.textContent = 'Test: ' + (await (await fetch('/api/notify/test', {method: 'POST'})).json()).result; }
+        catch (err) { status.textContent = 'Test failed: ' + err.message; }
+    });
+    loadAlertSettings().catch(() => {});
+});
+
+// About tab animation: hold one still frame (decoy hit) for people who prefer reduced motion.
+document.addEventListener('DOMContentLoaded', () => {
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    document.querySelectorAll('.karma-how svg').forEach(svg => { svg.pauseAnimations(); svg.setCurrentTime(6.3); });
+});

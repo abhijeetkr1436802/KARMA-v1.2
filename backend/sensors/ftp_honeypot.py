@@ -10,6 +10,7 @@ from backend.sensors.virtual_shell import VirtualShell
 
 
 class FTPHoneypotServer(BoundedTCPServer):
+    service = "FTP_HONEYPOT"
     def __init__(self, host=config.SENSOR_HOST, port=21, broadcast_callback=None):
         super().__init__(port, self.handle, host)
         self.broadcast = broadcast_callback
@@ -22,7 +23,7 @@ class FTPHoneypotServer(BoundedTCPServer):
         active = None
         user = None
         authenticated = False
-        deadline = time.monotonic() + 900
+        deadline = time.monotonic() + 1800
         def reply(message):
             control.sendall((message+'\r\n').encode('utf-8'))
         def close_data():
@@ -71,11 +72,11 @@ class FTPHoneypotServer(BoundedTCPServer):
                                     'Discovery', score, severity)
         if self.broadcast:
             self.broadcast({'id': event})
-        reply('220 Aegis Corporate File Service ready.')
+        reply(config.FTP_BANNER)
         try:
             with control.makefile('rb') as reader:
                 while self.running and not db.is_quarantined(ip) and time.monotonic() < deadline:
-                    control.settimeout(min(120, max(0.1,deadline-time.monotonic())))
+                    control.settimeout(min(600, max(0.1,deadline-time.monotonic())))
                     line = reader.readline(8193)
                     if not line:
                         break
@@ -84,8 +85,13 @@ class FTPHoneypotServer(BoundedTCPServer):
                         break
                     command, _, arg = line.decode('utf-8',errors='replace').strip().partition(' ')
                     command, arg = command.upper(), arg.strip()
+                    if command=='RETR':  # file download = data collection, not just browsing
+                        score, severity = calculate_event_risk(60, db.get_attempt_count(ip) + 1)
+                        mitre = ('T1005', 'Data from Local System', 'Collection')
+                    else:
+                        score, severity, mitre = 25, 'LOW', ('', '', '')
                     event = db.log_attack_event(ip,self.port,'FTP_HONEYPOT','FTP command',
-                        command + (' [redacted]' if command=='PASS' else ' '+arg), '', '', '',25,'LOW')
+                        command + (' [redacted]' if command=='PASS' else ' '+arg), *mitre, score, severity)
                     if self.broadcast:
                         self.broadcast({'id':event})
                     if command=='QUIT':

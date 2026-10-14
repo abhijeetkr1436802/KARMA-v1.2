@@ -224,7 +224,28 @@ class SystemTests(unittest.TestCase):
             self.assertEqual(saved["hit_count"], 1)
             self.assertTrue(db.is_quarantined("192.0.2.40"))
             self.assertEqual(web.get("/").status_code, 403)
-            self.assertEqual(db.get_total_attack_count(), 1)
+            # A blocked attempt is logged once as BLOCKED, then rate-limited per IP/port.
+            self.assertEqual(db.get_total_attack_count(), 2)
+            self.assertEqual(db.get_recent_logs(1)[0]["attack_type"], "Blocked Connection (Quarantined)")
+            self.assertEqual(web.get("/").status_code, 403)
+            self.assertEqual(db.get_total_attack_count(), 2)
+
+    def test_leaked_key_and_credentials_are_detected_when_used(self):
+        from backend.sensors.web_honeypot import web_decoy_app
+        from backend.sensors.virtual_shell import VirtualShell
+        from backend.sensors.ssh_honeypot import ParamikoHoneypotInterface
+        leak = VirtualShell("192.0.2.50", "10.0.0.1").files["/srv/company/operations/deploy.env"].decode()
+        key = leak.split("API_KEY=")[1].split()[0]
+        user, password = leak.split("STAGING_SSH=")[1].split()[0].split(":", 1)
+        with TestClient(web_decoy_app, client=("192.0.2.50", 1234)) as web:
+            self.assertEqual(web.get("/api/v1/admin/db_export", headers={"X-API-Key": key}).status_code, 403)
+        hits = {t["token_id"]: t["hit_count"] for t in db.get_honeytokens()}
+        self.assertEqual(hits["ht-aws-01"], 1)
+        ssh = ParamikoHoneypotInterface("192.0.2.51")
+        ssh.check_auth_password(user, password)
+        hits = {t["token_id"]: t["hit_count"] for t in db.get_honeytokens()}
+        self.assertEqual(hits["ht-ssh-key"], 1)
+        self.assertTrue(db.is_quarantined("192.0.2.51"))
 
     def test_production_cookie_and_https_requirement(self):
         with patch.object(config, "PRODUCTION", True), patch.object(config, "COOKIE_SECURE", True):
@@ -319,14 +340,14 @@ class SystemTests(unittest.TestCase):
         from pypdf import PdfReader
         from backend import documents
         from backend.sensors.web_honeypot import web_decoy_app
-        content = documents.issue_document(documents.FILES[0],'192.168.1.2','session-a','http://192.168.137.1:8080')
+        content = documents.issue_document(documents.TEMPLATES[0],'192.168.1.2','session-a','http://192.168.137.1:8080')
         reader = PdfReader(io.BytesIO(content))
         action = reader.pages[0]['/Annots'][0].get_object()['/A']
         self.assertEqual(action['/S'],'/URI')
         self.assertNotIn('/OpenAction',reader.trailer['/Root'])
         token = str(action['/URI']).rsplit('/',1)[-1]
         self.assertEqual(documents.lookup_document(token)['session_id'],'session-a')
-        workbook = documents.personalize(documents.FILES[1],str(action['/URI']))
+        workbook = documents.personalize(documents.TEMPLATES[1],str(action['/URI']))
         with zipfile.ZipFile(io.BytesIO(workbook)) as z:
             self.assertIn(token.encode(),z.read('xl/worksheets/_rels/sheet1.xml.rels'))
             self.assertFalse(any('vbaProject' in n or 'externalLinks/' in n or 'connections.xml' in n for n in z.namelist()))

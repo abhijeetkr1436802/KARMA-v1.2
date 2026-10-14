@@ -13,6 +13,7 @@ import time
 import logging
 import codecs
 import paramiko
+from backend import config
 from backend.config import PORT_SSH_HONEYPOT, DATA_DIR, SENSOR_HOST
 from backend.sensors.tcp_server import BoundedTCPServer
 from backend.database import is_quarantined, get_attempt_count
@@ -73,8 +74,19 @@ class ParamikoHoneypotInterface(paramiko.ServerInterface):
         return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
 
     def check_auth_password(self, username, password):
+        from backend.database import get_honeytokens, record_honeytoken_hit
+        # Logging in with planted (decoy) credentials proves the attacker stole them from a decoy file.
+        stolen = [t for t in get_honeytokens() if t["type"] == "Credentials" and t["token_value"] == f"{username}:{password}"]
+        for token in stolen:
+            record_honeytoken_hit(token["token_id"], self.client_ip)
         payload_info = f"SSH Login Attempt: USER '{username}' / PASS '[redacted]'"
-        mitre = map_payload_to_mitre("SSH_HONEYPOT", "ssh_command_execution", payload_info)
+        if stolen:
+            payload_info = f"Honeytoken credentials used: '{stolen[0]['name']}' / USER '{username}'"
+        mitre = map_payload_to_mitre("HONEYTOKEN" if stolen else "SSH_HONEYPOT", "ssh_command_execution", payload_info)
+        if stolen:
+            attack_type, mitre_id, mitre_name, mitre_tactic = "Honeytoken Credential Reuse", mitre['mitre_id'], mitre['mitre_name'], mitre['mitre_tactic']
+        else:
+            attack_type, mitre_id, mitre_name, mitre_tactic = "SSH Credential Brute-Force", "T1110", "Brute Force Authentication", "Credential Access"
         # The client banner reveals the attacker's SSH tool/OS (e.g. OpenSSH_for_Windows, Ubuntu).
         client = (self.transport.remote_version if self.transport else "") or "unknown"
         payload_info += f" / CLIENT '{client[:120]}'"
@@ -84,17 +96,17 @@ class ParamikoHoneypotInterface(paramiko.ServerInterface):
             attacker_ip=self.client_ip,
             port=self.port,
             decoy_service="SSH_HONEYPOT",
-            attack_type="SSH Credential Brute-Force",
+            attack_type=attack_type,
             payload=payload_info,
-            mitre_id="T1110",
-            mitre_name="Brute Force Authentication",
-            mitre_tactic="Credential Access",
+            mitre_id=mitre_id,
+            mitre_name=mitre_name,
+            mitre_tactic=mitre_tactic,
             risk_score=score,
             severity=severity
         )
 
         geo = get_geo_info(self.client_ip)
-        quarantined, _ = active_defense_engine.process_event(self.client_ip, score, "SSH Brute Force")
+        quarantined, _ = active_defense_engine.process_event(self.client_ip, score, mitre_name)
         mark_event_quarantine(log_id, quarantined)
 
         if self.broadcast_cb:
@@ -104,11 +116,11 @@ class ParamikoHoneypotInterface(paramiko.ServerInterface):
                 "attacker_ip": self.client_ip,
                 "port": self.port,
                 "decoy_service": "SSH_HONEYPOT",
-                "attack_type": "SSH Credential Brute-Force",
+                "attack_type": attack_type,
                 "payload": payload_info,
-                "mitre_id": "T1110",
-                "mitre_name": "Brute Force Authentication",
-                "mitre_tactic": "Credential Access",
+                "mitre_id": mitre_id,
+                "mitre_name": mitre_name,
+                "mitre_tactic": mitre_tactic,
                 "risk_score": score,
                 "severity": severity,
                 "quarantined": quarantined,
@@ -151,17 +163,15 @@ class ParamikoHoneypotInterface(paramiko.ServerInterface):
         return accepted
 
 class SSHHoneypotServer(BoundedTCPServer):
+    service = "SSH_HONEYPOT"
     def __init__(self, host=SENSOR_HOST, port=PORT_SSH_HONEYPOT, broadcast_callback=None):
         super().__init__(port, self._handle_client, host)
         self.broadcast_callback = broadcast_callback
         self.host_key = None
 
     def start(self):
-        from backend.documents import callback_base, ASSETS, FILES
-        callback_base('127.0.0.1')
-        for name in FILES:
-            if not (ASSETS / name).is_file():
-                raise RuntimeError(f'Missing decoy document template: {name}')
+        from backend.documents import callback_base
+        callback_base('127.0.0.1')  # fail fast on a malformed KARMA_CALLBACK_BASE_URL
         self.host_key = get_persistent_host_key()
         super().start()
 
@@ -170,7 +180,7 @@ class SSHHoneypotServer(BoundedTCPServer):
         try:
             # First peek to see if client sends SSH handshake or raw data
             transport = paramiko.Transport(client_sock)
-            transport.local_version = 'SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.1'
+            transport.local_version = config.SSH_BANNER
             transport.add_server_key(self.host_key)
             transport.banner_timeout = 10
             transport.auth_timeout = 120
@@ -195,10 +205,10 @@ class SSHHoneypotServer(BoundedTCPServer):
 
             if not server.event_event.wait(10):
                 return
-            deadline = time.monotonic() + 900
+            deadline = time.monotonic() + 1800
             if server.mode == 'sftp':
                 while self.running and transport.is_active() and not channel.closed and not is_quarantined(client_ip):
-                    if time.monotonic() >= deadline or time.monotonic() - shell.last_activity > 120:
+                    if time.monotonic() >= deadline or time.monotonic() - shell.last_activity > 600:
                         break
                     time.sleep(0.25)
                 return
@@ -214,11 +224,11 @@ class SSHHoneypotServer(BoundedTCPServer):
             channel.send(b"\r\nWelcome to Aegis Linux Security Gateway 22.04 LTS\r\n\r\n")
             channel.sendall(shell.prompt.encode())
 
-            channel.settimeout(120)
+            channel.settimeout(600)
             terminal = TerminalInput()
             decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
             while self.running and not channel.closed and not is_quarantined(client_ip) and time.monotonic() < deadline:
-                channel.settimeout(min(120, max(0.1, deadline-time.monotonic())))
+                channel.settimeout(min(600, max(0.1, deadline-time.monotonic())))
                 data = channel.recv(1024)
                 if not data:
                     break

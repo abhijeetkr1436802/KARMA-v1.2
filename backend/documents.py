@@ -14,7 +14,17 @@ from pypdf.generic import NameObject, TextStringObject
 from backend import config, database as db
 
 ASSETS = Path(__file__).parent / 'assets'
-FILES = ('company_data_2026.pdf', 'company_financials_25-26.xlsx')
+# Templates that get a per-session acknowledgement link; every other asset is served as-is.
+TEMPLATES = ('company_data_2026.pdf', 'company_financials_25-26.xlsx')
+MAX_ASSET_BYTES = 50 * 1024 * 1024
+
+
+def asset_files():
+    """Decoy files offered over SSH/SFTP/FTP: whatever is in backend/assets right now.
+    Drop a file in to offer it, delete it to withdraw it; new sessions see the change."""
+    return tuple(sorted(p.name for p in ASSETS.iterdir()
+                        if p.is_file() and not p.name.startswith('.') and p.name != 'README.md'
+                        and p.stat().st_size <= MAX_ASSET_BYTES))
 PLACEHOLDER = 'https://karma.invalid/document/PLACEHOLDER'
 TTL = 7 * 86400
 SHEET_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -72,9 +82,11 @@ def workbook_link(content, url):
 
 
 def personalize(filename, url):
-    if filename not in FILES:
+    if filename not in asset_files():
         raise ValueError('Unknown decoy document')
     path = ASSETS / filename
+    if filename not in TEMPLATES:
+        return path.read_bytes()
     if filename.endswith('.xlsx'):
         return workbook_link(path.read_bytes(), url)
     writer = PdfWriter(clone_from=str(path))

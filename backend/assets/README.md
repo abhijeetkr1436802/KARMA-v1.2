@@ -1,4 +1,13 @@
-# Synthetic document templates
+# Decoy files
+
+Every file in this folder (except this README) is offered to attackers in the fake
+SSH/SFTP shell and the FTP decoy, under `/root` and `/srv/company`. Add or delete files
+at any time: each new attacker session lists what is here at that moment. Files over
+50 MB are skipped. Only put synthetic data here, never real confidential records.
+
+## Synthetic document templates
+
+The two templates below are special: they get a per-session acknowledgement link.
 
 These reports contain invented company data for the KARMA demonstration. They contain
 no macros, automatic callbacks, scripts, embedded files or executable payloads.

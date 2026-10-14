@@ -34,7 +34,7 @@ ADMIN_TOKEN_FILE = DATA_DIR / "admin-token"
 ADMIN_TOKEN = os.environ.get("KARMA_ADMIN_TOKEN", "")
 PRODUCTION = os.environ.get("KARMA_ENV", "development") == "production"
 DOMAIN = os.environ.get("KARMA_DOMAIN", "karma-honeypot.com")
-ALLOWED_HOSTS = os.environ.get("KARMA_ALLOWED_HOSTS", f"localhost,127.0.0.1,[::1],{DOMAIN}").split(",")
+ALLOWED_HOSTS = os.environ.get("KARMA_ALLOWED_HOSTS", f"localhost,127.0.0.1,[::1],{DOMAIN},www.{DOMAIN}").split(",")
 # Created by tools/make_cert.py; when present the dashboard serves HTTPS on 443.
 TLS_CERT = DATA_DIR / "tls" / "server.pem"
 TLS_KEY = DATA_DIR / "tls" / "server-key.pem"
@@ -65,6 +65,9 @@ COOKIE_SECURE = PRODUCTION or TLS_ENABLED or os.environ.get("KARMA_COOKIE_SECURE
 PORT_API = int(os.environ.get("KARMA_PORT", "443" if TLS_ENABLED else "8000"))
 DASHBOARD_URL = (f"https://{DOMAIN}" + ("" if PORT_API == 443 else f":{PORT_API}")) if TLS_ENABLED else f"http://localhost:{PORT_API}"
 PORT_SSH_HONEYPOT = 2222
+# Decoy banners; the desktop launcher can override them before starting the server.
+SSH_BANNER = "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.1"
+FTP_BANNER = "220 Aegis Corporate File Service ready."
 PORT_WEB_HONEYPOT = 8080
 DECOY_PORTS = [21, 23, 3389]  # FTP, Telnet, RDP decoy probes
 

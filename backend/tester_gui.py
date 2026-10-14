@@ -190,27 +190,28 @@ class KarmaTesterApp:
     def test_ssh(self):
         threading.Thread(target=self._run_ssh_test, daemon=True).start()
 
+    def _ssh_exec(self, cmd):
+        """Real SSH client (the honeypot speaks SSH, not plain text); accepts any password."""
+        import paramiko
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            client.connect(self.get_target(), port=2222, username="root", password="toor",
+                           timeout=6, banner_timeout=6, auth_timeout=6,
+                           allow_agent=False, look_for_keys=False)
+            self.log(f"🟢 [SSH Banner Received]: {client.get_transport().remote_version}")
+            _, stdout, _ = client.exec_command(cmd, timeout=6)
+            return stdout.read().decode("utf-8", errors="ignore")
+        finally:
+            client.close()
+
     def _run_ssh_test(self):
         target = self.get_target()
         self.log(f"\n--- [TEST] Probing SSH Honeypot on {target}:2222 ---")
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(4.0)
-            sock.connect((target, 2222))
-            
-            banner = sock.recv(1024).decode('utf-8', errors='ignore').strip()
-            self.log(f"🟢 [SSH Banner Received]: {banner}")
-
-            prompt = sock.recv(1024).decode('utf-8', errors='ignore').strip()
-            self.log(f"🟢 [SSH Prompt Received]: {prompt}")
-
-            # Send test command 'whoami'
-            self.log("➡️ [Sending Command]: 'whoami'")
-            sock.sendall(b"whoami\r\n")
-            time_resp = sock.recv(1024).decode('utf-8', errors='ignore')
-            self.log(f"📥 [Honeypot Shell Response]:\n{time_resp}")
-
-            sock.close()
+            # 'ls' stays below the quarantine threshold, so the rest of the audit still runs in Contain mode.
+            self.log("➡️ [Sending Command]: 'ls'")
+            self.log(f"📥 [Honeypot Shell Response]:\n{self._ssh_exec('ls')}")
             self.log("✔ SSH Honeypot probe completed. Event logged to SIEM dashboard!")
         except Exception as e:
             self.log(f"🔴 [SSH Test Error]: {e}")
@@ -225,17 +226,8 @@ class KarmaTesterApp:
         target = self.get_target()
         self.log(f"\n--- [CUSTOM SSH COMMAND] Sending '{cmd}' to {target}:2222 ---")
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(4.0)
-            sock.connect((target, 2222))
-            _ = sock.recv(1024) # banner
-            _ = sock.recv(1024) # prompt
-
             self.log(f"➡️ [Sending]: '{cmd}'")
-            sock.sendall(cmd.encode('utf-8') + b"\r\n")
-            resp = sock.recv(1024).decode('utf-8', errors='ignore')
-            self.log(f"📥 [Honeypot Shell Output]:\n{resp}")
-            sock.close()
+            self.log(f"📥 [Honeypot Shell Output]:\n{self._ssh_exec(cmd)}")
             self.log("✔ Command captured & logged to SIEM telemetry feed!")
         except Exception as e:
             self.log(f"🔴 [SSH Command Error]: {e}")

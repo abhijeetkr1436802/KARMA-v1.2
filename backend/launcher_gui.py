@@ -152,12 +152,12 @@ class KarmaPreflightLauncher:
 
         tk.Label(banner_frame, text="SSH Service Banner (Port 2222):", font=("Segoe UI", 9, "bold"), bg="#1e293b", fg="#94a3b8").grid(row=0, column=0, sticky="w")
         self.entry_ssh_banner = tk.Entry(banner_frame, font=("Consolas", 9), bg="#0f172a", fg="#38bdf8", insertbackground="white", width=42)
-        self.entry_ssh_banner.insert(0, "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.1")
+        self.entry_ssh_banner.insert(0, config.SSH_BANNER)
         self.entry_ssh_banner.grid(row=0, column=1, padx=10, pady=4)
 
         tk.Label(banner_frame, text="FTP Server Banner (Port 21):", font=("Segoe UI", 9, "bold"), bg="#1e293b", fg="#94a3b8").grid(row=1, column=0, sticky="w")
         self.entry_ftp_banner = tk.Entry(banner_frame, font=("Consolas", 9), bg="#0f172a", fg="#38bdf8", insertbackground="white", width=42)
-        self.entry_ftp_banner.insert(0, "220 ProFTPD 1.3.5 Server Ready.")
+        self.entry_ftp_banner.insert(0, config.FTP_BANNER)
         self.entry_ftp_banner.grid(row=1, column=1, padx=10, pady=4)
 
         # DeepSeek AI API key (enables free-form AI chat; offline analyst works without it)
@@ -292,6 +292,14 @@ class KarmaPreflightLauncher:
             toggle_decoy(item_id, is_enabled)
             status_str = "ENABLED (binding pending)" if is_enabled else "DISABLED"
             self.log(f"[+] Decoy '{item_id}': {status_str}")
+
+        # Apply the banner fields (one line each; SSH must keep its protocol prefix)
+        ssh_banner = " ".join(self.entry_ssh_banner.get().split())[:200]
+        ftp_banner = " ".join(self.entry_ftp_banner.get().split())[:200]
+        config.SSH_BANNER = ssh_banner if ssh_banner.startswith("SSH-2.0-") else "SSH-2.0-" + (ssh_banner or "OpenSSH_8.9p1")
+        config.FTP_BANNER = ftp_banner if ftp_banner.startswith("220 ") else "220 " + (ftp_banner or "FTP service ready.")
+        self.log(f"[+] SSH banner: {config.SSH_BANNER}")
+        self.log(f"[+] FTP banner: {config.FTP_BANNER}")
 
         # Disable checkboxes while running
         for chk in self.check_widgets:

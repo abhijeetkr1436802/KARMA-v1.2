@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KARMA — Threat Deception Platform</title>
+<link rel="icon" href="assets/logo_icon.ico">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div class="progress" id="progress"></div>
+
+<main class="deck" id="deck">
+
+  <!-- 1 · COVER -->
+  <section class="slide slide--reveal center" data-accent="amber">
+    <div class="wrap">
+      <div class="cover-mark r"><img src="assets/logo_main.png" alt="KARMA"></div>
+      <h1 class="h-hero r">The attack that<br>returns to its <span class="amber">sender</span>.</h1>
+      <p class="lead cover-sub r">A honeypot-based threat deception platform. It doesn't build a higher wall — it lays a more tempting trap.</p>
+      <div class="cover-meta r small">
+        <span>A Semester VI Diploma Major Project</span>
+        <span>Cyber Security &amp; Engineering</span>
+        <span>The Oxford Evening Polytechnic</span>
+      </div>
+      <div class="cue r"><span class="arr"><svg viewBox="0 0 24 24" fill="none" stroke="#f7a53b" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg></span> Press <b>&nbsp;Space&nbsp;</b> or scroll to begin</div>
+    </div>
+  </section>
+
+  <!-- 2 · PROBLEM INTRO -->
+  <section class="slide slide--crisis" data-accent="red">
+    <div class="wrap">
+      <p class="kicker kicker--red r">The problem</p>
+      <h2 class="h-xl r">Every wall we build,<br>someone already walked <span class="red">past</span>.</h2>
+      <p class="lead r" style="margin-top:28px">In 2025 and 2026, some of the largest and best-defended organisations on earth were breached — not through the front gate, but through a stolen password, a trusted supplier, or a weakness nobody was watching.</p>
+    </div>
+  </section>
+
+  <!-- 3 · BREACH WALL -->
+  <section class="slide slide--dark" data-accent="red">
+    <div class="wrap">
+      <p class="kicker kicker--red r">Recent breaches · the headlines</p>
+      <h2 class="h-lg r">This happened. To real companies. Recently.</h2>
+      <div class="breach-grid">
+        <div class="breach r"><div><div class="num">1,000,000,000+</div><div class="who">Salesforce customers</div><div class="what">Over a billion records stolen through two trusted vendors; Google, Cloudflare, Verizon &amp; others named.</div></div><div class="src">Scattered Lapsus$ Hunters · Oct 2025 · TechCrunch</div></div>
+        <div class="breach r"><div><div class="num">33M</div><div class="who">Coupang</div><div class="what">Korea's largest retailer — ~33 million customers' data stolen over months before it was even detected.</div></div><div class="src">Detected Nov 2025 · TechCrunch</div></div>
+        <div class="breach r"><div><div class="num">30M+</div><div class="who">Instructure · Canvas</div><div class="what">Student &amp; staff data stolen, login page defaced during finals.</div></div><div class="src">ShinyHunters · May 2026</div></div>
+        <div class="breach r"><div><div class="num">£1.5B</div><div class="who">Jaguar Land Rover</div><div class="what">A breach halted car production for months — called the most economically damaging cyberattack in UK history.</div></div><div class="src">Sep 2025 · TechCrunch</div></div>
+        <div class="breach r"><div><div class="num">6.5M</div><div class="who">Co-op · M&amp;S · Harrods</div><div class="what">UK retail hit in sequence; empty grocery shelves as core systems were knocked offline.</div></div><div class="src">Spring–Summer 2025</div></div>
+        <div class="breach r"><div><div class="num">15M</div><div class="who">DentaQuest</div><div class="what">Health data of 15 million people stolen — the largest known healthcare breach of 2026.</div></div><div class="src">2026 · TechCrunch</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 · INDIA -->
+  <section class="slide slide--dark" data-accent="amber">
+    <div class="wrap">
+      <p class="kicker r">It is not somewhere else · India, now</p>
+      <h2 class="h-lg r">The same week, the same country, the same risk.</h2>
+      <div class="facts">
+        <div class="fact fact--red r"><div class="n">31M</div><div class="l">Star Health policyholders exposed — names, addresses, medical reports &amp; claims leaked. <span class="small">Oct 2024</span></div></div>
+        <div class="fact fact--amber r"><div class="n">1.4 TB</div><div class="l">Data a ransomware group claimed from Tata Technologies after an attack on its IT systems. <span class="small">Feb 2025</span></div></div>
+        <div class="fact fact--blue r"><div class="n">~30 lakh</div><div class="l">Cyber incidents handled by CERT-In across India in 2025 alone. <span class="small">VisionIAS, Jan 2026</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · THE NUMBER -->
+  <section class="slide slide--crisis center" data-accent="amber">
+    <div class="wrap">
+      <p class="kicker r">The number that should scare everyone</p>
+      <div class="stat-hero r" data-count="241" data-suffix="">0</div>
+      <div class="stat-sub r">days, on average, to even <span class="amber">identify and contain</span> a breach — the intruder is inside for most of a year.</div>
+      <p class="small r" style="margin-top:26px">IBM Cost of a Data Breach Report 2025 · global average cost $4.44M · U.S. average $10.22M</p>
+    </div>
+  </section>
+
+  <!-- 6 · WALLS FAIL -->
+  <section class="slide slide--dark" data-accent="red">
+    <div class="wrap">
+      <p class="kicker kicker--red r">Why a firewall and antivirus are not enough</p>
+      <h2 class="h-lg r">A wall stops what it knows.<br>It never sees who is already <span class="red">inside</span>.</h2>
+      <div class="facts">
+        <div class="fact fact--red r"><div class="n">22%</div><div class="l">of breaches start with stolen credentials — a valid login the firewall happily waves through.</div></div>
+        <div class="fact fact--red r"><div class="n">44%</div><div class="l">of breaches now involve ransomware; the damage is done before anyone notices.</div></div>
+        <div class="fact fact--red r"><div class="n">30%</div><div class="l">involve a third party — the attack arrives through someone you already trust.</div></div>
+      </div>
+      <p class="small r" style="margin-top:34px">Verizon 2025 Data Breach Investigations Report · 12,195 breaches analysed</p>
+    </div>
+  </section>
+
+  <!-- 7 · WHY HONEYPOTS -->
+  <section class="slide slide--amber" data-accent="amber">
+    <div class="wrap">
+      <p class="kicker r">The shift</p>
+      <h2 class="h-xl r">Stop building higher walls.<br>Start laying <span class="amber">better traps</span>.</h2>
+      <p class="lead r" style="margin-top:30px">A firewall is passive — it waits to be attacked. A <strong>honeypot</strong> is active: a decoy that looks more valuable than the real thing, so attackers reach for it first. The moment they touch it, you know. There is no false alarm — <strong>nobody has a reason to touch a decoy except an intruder.</strong></p>
+    </div>
+  </section>
+
+  <!-- 8 · HOW HONEYPOTS WORK -->
+  <section class="slide slide--dark" data-accent="amber">
+    <div class="wrap">
+      <p class="kicker r">How a honeypot works</p>
+      <h2 class="h-md r">The attacker aims at the real server. The decoy pulls the attack into itself.</h2>
+      <div class="how-stage r" id="howStage"></div>
+      <div class="how-steps">
+        <p class="r"><b>1 · Lure</b>Decoys that look like real servers, files and logins sit in the network, deliberately more tempting than production.</p>
+        <p class="r"><b>2 · Trap</b>The first thing an attacker touches is the decoy. Every keystroke is logged; the real systems are never reached.</p>
+        <p class="r"><b>3 · Contain</b>The attacker is profiled, scored against MITRE ATT&amp;CK, and quarantined — while you get alerted.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 · REVEAL -->
+  <section class="slide slide--reveal center" data-accent="amber">
+    <div class="wrap">
+      <p class="kicker r">Before it is too late</p>
+      <h1 class="h-hero r">KARMA</h1>
+      <p class="lead r center" style="margin-top:24px;text-align:center">A single-host honeypot &amp; threat-deception platform that turns your own network into the trap.</p>
+    </div>
+  </section>
+
+  <!-- 10 · WHAT IS KARMA -->
+  <section class="slide slide--panel" data-accent="amber">
+    <div class="wrap">
+      <p class="kicker r">What the name means</p>
+      <h2 class="h-xl r"><span class="amber">K</span>anaka · <span class="amber">A</span>bhijeet · <span class="amber">R</span>aghunandan<br><span class="amber">M</span>onitoring &amp; <span class="amber">A</span>ctive Cyber Deception</h2>
+      <p class="lead r" style="margin-top:28px">In security, <strong>karma</strong> means an adversary's own attack probes return straight back to trap, profile and isolate them — automatically.</p>
+    </div>
+  </section>
+
+  <!-- 11 · FEATURE: LIVE ATTACK MAP (video) -->
+  <section class="slide slide--dark" data-accent="red">
+    <div class="wrap">
+      <p class="kicker kicker--red r">The headline feature · live, on screen</p>
+      <h2 class="h-lg r">Watch the attack get <span class="amber">pulled off course</span>.</h2>
+      <div class="frame r" style="margin-top:34px">
+        <div class="bar"><i></i><i></i><i></i><span>karma-honeypot.com / live-attack-map</span></div>
+        <video id="mapVideo" src="assets/video/attack-map.mp4" muted loop playsinline preload="auto"></video>
+      </div>
+      <p class="small r" style="margin-top:16px">Real recording. Each attack starts aimed at the production server, then the honeypot's pull bends it into the trap. The production server is never touched.</p>
+    </div>
+  </section>
+
+  <!-- 12 · FEATURE: DASHBOARD -->
+  <section class="slide slide--panel" data-accent="blue">
+    <div class="wrap">
+      <div class="split">
+        <div class="copy">
+          <p class="kicker kicker--blue r">The command centre</p>
+          <h2 class="h-md r">One dashboard. Every attack, as it lands.</h2>
+          <div class="feat-list">
+            <div class="row r"><span class="dot"></span><div><h4>Live event counters</h4><p>Threat, audit and endpoint events update the moment a probe hits a decoy.</p></div></div>
+            <div class="row r"><span class="dot"></span><div><h4>Real-time trend &amp; breakdown charts</h4><p>Event volume per second, severity doughnut, and action-outcome bars — all live.</p></div></div>
+            <div class="row r"><span class="dot"></span><div><h4>Contain vs Observe</h4><p>Flip one control between auto-blocking attackers and quietly watching them explore.</p></div></div>
+          </div>
+        </div>
+        <div class="media r"><div class="frame"><div class="bar"><i></i><i></i><i></i><span>Dashboard · Summary</span></div><img src="assets/shots/summary.png" alt="KARMA dashboard summary"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 13 · FEATURE: MITRE -->
+  <section class="slide slide--dark" data-accent="amber">
+    <div class="wrap">
+      <div class="split split--rev">
+        <div class="media r"><div class="frame"><div class="bar"><i></i><i></i><i></i><span>MITRE ATT&amp;CK</span></div><img src="assets/shots/mitre.png" alt="MITRE ATT&CK heatmap"></div></div>
+        <div class="copy">
+          <p class="kicker r">Spoken in the language of real defenders</p>
+          <h2 class="h-md r">Every attack, mapped to MITRE ATT&amp;CK.</h2>
+          <div class="feat-list">
+            <div class="row r"><span class="dot"></span><div><h4>Automatic classification</h4><p>SSH brute-force → T1110, SQL injection → T1190, honeytoken use → T1078, and more.</p></div></div>
+            <div class="row r"><span class="dot"></span><div><h4>A live heatmap</h4><p>Techniques light up as they're seen, with a running hit count per technique.</p></div></div>
+            <div class="row r"><span class="dot"></span><div><h4>The global standard</h4><p>The same framework professional SOC teams use — not invented terminology.</p></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 14 · FEATURE: HONEYTOKENS -->
+  <section class="slide slide--panel" data-accent="amber">
+    <div class="wrap">
+      <div class="split">
+        <div class="copy">
+          <p class="kicker r">Bait that bites back</p>
+          <h2 class="h-md r">Fake keys &amp; credentials that betray the thief.</h2>
+          <div class="feat-list">
+            <div class="row r"><span class="dot"></span><div><h4>Planted secrets</h4><p>A decoy AWS key, a fake admin URL, staging credentials — left where an attacker will find them.</p></div></div>
+            <div class="row r"><span class="dot"></span><div><h4>Detected on use</h4><p>The instant a stolen token is used, KARMA knows it was taken from a decoy — a zero-false-positive alarm.</p></div></div>
+            <div class="row r"><span class="dot"></span><div><h4>Your own tokens</h4><p>Generate and manage custom honeytokens from the vault at any time.</p></div></div>
+          </div>
+        </div>
+        <div class="media r"><div class="frame"><div class="bar"><i></i><i></i><i></i><span>Honeytoken Vault</span></div><img src="assets/shots/honeytokens.png" alt="Honeytoken vault"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 15 · FEATURE: DECOYS -->
+  <section class="slide slide--dark" data-accent="green">
+    <div class="wrap">
+      <div class="split split--rev">
+        <div class="media r"><div class="frame"><div class="bar"><i></i><i></i><i></i><span>Honeypot &amp; Decoy Control</span></div><img src="assets/shots/decoys.png" alt="Decoy control"></div></div>
+        <div class="copy">
+          <p class="kicker kicker--green r">The traps themselves</p>
+          <h2 class="h-md r">Five decoy services. All fake. All convincing.</h2>
+          <div class="feat-list">
+            <div class="row r"><span class="dot"></span><div><h4>SSH, Web, FTP, Telnet, RDP</h4><p>Each pretends to be real; commands are never executed on the host.</p></div></div>
+            <div class="row r"><span class="dot"></span><div><h4>Toggle any trap live</h4><p>Disabled decoys unbind at the OS level, so scanners correctly see them as closed.</p></div></div>
+            <div class="row r"><span class="dot"></span><div><h4>A fake file server</h4><p>Attackers can browse and download decoy company files over SSH &amp; FTP — every download is logged.</p></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 16 · FEATURE: AI COPILOT -->
+  <section class="slide slide--panel" data-accent="blue">
+    <div class="wrap">
+      <div class="split">
+        <div class="copy">
+          <p class="kicker kicker--blue r">An analyst that never sleeps</p>
+          <h2 class="h-md r">AI SOC copilot, grounded in your live telemetry.</h2>
+          <div class="feat-list">
+            <div class="row r"><span class="dot"></span><div><h4>Full context</h4><p>The copilot always has every logged attack, attacker and honeytoken hit in view.</p></div></div>
+            <div class="row r"><span class="dot"></span><div><h4>Works offline too</h4><p>With no API key, an offline analyst still answers from live data — no internet required.</p></div></div>
+            <div class="row r"><span class="dot"></span><div><h4>Forensic reports</h4><p>One click produces a rule-based incident report for any attacker IP.</p></div></div>
+          </div>
+        </div>
+        <div class="media r"><div class="frame"><div class="bar"><i></i><i></i><i></i><span>AI SOC Copilot</span></div><img src="assets/shots/ai-copilot.png" alt="AI copilot"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 17 · FEATURE: ALERTS + THREATS -->
+  <section class="slide slide--dark" data-accent="amber">
+    <div class="wrap">
+      <div class="split split--rev">
+        <div class="media r"><div class="frame"><div class="bar"><i></i><i></i><i></i><span>Phone &amp; E-mail Alerts</span></div><img src="assets/shots/alerts.png" alt="Alerts settings"></div></div>
+        <div class="copy">
+          <p class="kicker r">You find out first</p>
+          <h2 class="h-md r">A real attack buzzes your phone.</h2>
+          <div class="feat-list">
+            <div class="row r"><span class="dot"></span><div><h4>Push &amp; e-mail</h4><p>Free phone push via ntfy and e-mail via Gmail — set up right inside the dashboard.</p></div></div>
+            <div class="row r"><span class="dot"></span><div><h4>Smart, not spammy</h4><p>One alert when an attack starts; silence while it continues; a fresh alert only after it stops for an hour.</p></div></div>
+            <div class="row r"><span class="dot"></span><div><h4>Adversary profiler</h4><p>Every attacker gets a forensic profile, risk score and one-click quarantine.</p></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 18 · FEATURE: TOOLKIT -->
+  <section class="slide slide--panel" data-accent="green">
+    <div class="wrap">
+      <div class="split">
+        <div class="copy">
+          <p class="kicker kicker--green r">Bundled cyber toolkit</p>
+          <h2 class="h-md r">A SOC desk, not just a honeypot.</h2>
+          <div class="feat-list">
+            <div class="row r"><span class="dot"></span><div><h4>AI phishing .EML analyzer</h4><p>Drop in a suspicious e-mail; KARMA scores it and flags the tells.</p></div></div>
+            <div class="row r"><span class="dot"></span><div><h4>Password strength &amp; hasher</h4><p>Live strength meter plus SHA-256 / SHA-512 / MD5 hashing.</p></div></div>
+            <div class="row r"><span class="dot"></span><div><h4>Document decoy lab</h4><p>Per-session tracked decoy documents that phone home when opened.</p></div></div>
+          </div>
+        </div>
+        <div class="media r"><div class="frame"><div class="bar"><i></i><i></i><i></i><span>AI Phishing .EML Analyzer</span></div><img src="assets/shots/tool-phishing.png" alt="Phishing analyzer"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 19 · ARCHITECTURE -->
+  <section class="slide slide--dark" data-accent="blue">
+    <div class="wrap">
+      <p class="kicker kicker--blue r">Under the hood · how it fits together</p>
+      <h2 class="h-md r">From a raw TCP probe to a push notification — one flow.</h2>
+      <div class="how-stage r" id="archStage"></div>
+    </div>
+  </section>
+
+  <!-- 20 · TECH: BACKEND -->
+  <section class="slide slide--panel" data-accent="green">
+    <div class="wrap">
+      <p class="kicker kicker--green r">The technicalities · backend</p>
+      <h2 class="h-md r">Python, built for real network traffic.</h2>
+      <div class="tech-cols">
+        <div class="tech-col r"><h3>API &amp; server</h3><div class="role">serve · route · stream</div>
+          <ul><li><b>FastAPI</b> — authenticated dashboard &amp; REST API</li><li><b>Uvicorn</b> — ASGI server, loopback-only in dev</li><li><b>WebSockets</b> — live telemetry to the browser</li><li><b>Pydantic</b> — request validation at every boundary</li></ul></div>
+        <div class="tech-col r"><h3>The honeypots</h3><div class="role">lure · trap · log</div>
+          <ul><li><b>Paramiko</b> — a real SSH/SFTP server; commands never run on the host</li><li><b>Raw sockets</b> — FTP, Telnet &amp; RDP decoys with exclusive binds</li><li><b>Virtual shell</b> — a fake filesystem the attacker explores</li></ul></div>
+        <div class="tech-col r"><h3>Data &amp; security</h3><div class="role">store · sign · defend</div>
+          <ul><li><b>SQLite</b> — event store + CSV audit segments</li><li><b>cryptography · bcrypt · PyNaCl</b> — TLS certs, hashing, keys</li><li><b>pypdf</b> — per-session tracked decoy documents</li></ul></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 21 · TECH: FRONTEND + AI -->
+  <section class="slide slide--dark" data-accent="amber">
+    <div class="wrap">
+      <p class="kicker r">The technicalities · frontend &amp; intelligence</p>
+      <h2 class="h-md r">A production-grade console, no framework bloat.</h2>
+      <div class="tech-cols">
+        <div class="tech-col r"><h3>Interface</h3><div class="role">render · react · theme</div>
+          <ul><li><b>Vanilla JS</b> — fast, dependency-light dashboard</li><li><b>Claymorphism UI</b> — custom design system, light &amp; dark</li><li><b>CSRF-guarded fetch</b> &amp; 8-hour sessions</li></ul></div>
+        <div class="tech-col r"><h3>Visualisation</h3><div class="role">chart · map · animate</div>
+          <ul><li><b>Chart.js</b> — live trend, doughnut &amp; bar charts</li><li><b>Leaflet</b> — attacker map on Esri satellite tiles</li><li><b>SVG + CSS</b> — the live attack-map animation</li></ul></div>
+        <div class="tech-col r"><h3>Intelligence</h3><div class="role">score · classify · explain</div>
+          <ul><li><b>DeepSeek</b> — the free-form AI SOC copilot</li><li><b>Offline analyst</b> — rule-based fallback, no internet</li><li><b>MITRE mapper</b> &amp; dynamic threat-scoring engine</li></ul></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 22 · BY THE NUMBERS -->
+  <section class="slide slide--panel center" data-accent="amber">
+    <div class="wrap">
+      <p class="kicker r">KARMA, by the numbers</p>
+      <div class="numbers">
+        <div class="r"><div class="n" data-count="5">0</div><div class="l">decoy services — SSH, Web, FTP, Telnet, RDP</div></div>
+        <div class="r"><div class="n" data-count="7">0</div><div class="l">MITRE ATT&amp;CK techniques auto-mapped</div></div>
+        <div class="r"><div class="n" data-count="39">0</div><div class="l">automated regression tests, all passing</div></div>
+        <div class="r"><div class="n" data-count="0" data-text="0">0</div><div class="l">attacks that ever reach the real server</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 23 · THANK YOU -->
+  <section class="slide slide--reveal center" data-accent="amber">
+    <div class="wrap">
+      <div class="cover-mark r" style="justify-content:center"><img src="assets/logo_main.png" alt="KARMA"></div>
+      <h1 class="h-xl r">Thank you.</h1>
+      <div class="team-line r">
+        <b>Abhijeet Kumar</b> · Core Architect &amp; Lead Developer<br>
+        <b>Kanaka C</b> · Security Analyst &amp; Frontend<br>
+        <b>Raghunandan T V</b> · Backend<br>
+        <b>Sanjay Kashyap</b> · Team<br>
+        <span class="small" style="display:block;margin-top:18px">Guided by Mr. Subhash J R · The Oxford Evening Polytechnic</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 24 · Q&A -->
+  <section class="slide slide--crisis center" data-accent="amber">
+    <div class="wrap">
+      <h1 class="qna-big r">Q&amp;A</h1>
+      <p class="lead r center" style="margin-top:20px;text-align:center">Ask us anything — the honeypot is still running.</p>
+    </div>
+  </section>
+
+</main>
+
+<nav class="dots" id="dots" aria-label="Slides"></nav>
+<div class="counter" id="counter"><b>01</b> / 24</div>
+<div class="hint" id="hint"><kbd>↑</kbd><kbd>↓</kbd> navigate · <kbd>F</kbd> fullscreen</div>
+
+<script src="vendor/gsap.min.js"></script>
+<script src="vendor/ScrollTrigger.min.js"></script>
+<script src="vendor/three.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

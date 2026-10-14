@@ -37,3 +37,8 @@ def create_honeytoken(name, token_type, description="Custom Honeytoken"):
 
 def fetch_all_honeytokens():
     return get_honeytokens()
+
+
+def tokens_used_in(text, token_type):
+    """Honeytokens of this type (e.g. 'API Key', 'Credentials') whose value appears in text."""
+    return [t for t in get_honeytokens() if t["type"] == token_type and t["token_value"] and t["token_value"] in text]

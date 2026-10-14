@@ -2,7 +2,14 @@
 #   powershell -ExecutionPolicy Bypass -File tools\setup-demo.ps1
 $ErrorActionPreference = 'Stop'
 $Domain = if ($env:KARMA_DOMAIN) { $env:KARMA_DOMAIN } else { 'karma-honeypot.com' }
-$Python = (Get-Command python).Source
+# Ask Python itself: (Get-Command python) can return the Microsoft Store alias stub, not the interpreter.
+$Python = $null
+foreach ($cmd in @('python', 'py')) {
+    try { $Python = (& $cmd -c "import sys; print(sys.executable)") } catch { $Python = $null }
+    if ($Python) { break }  # the Store alias stub prints nothing
+}
+if (-not $Python) { throw 'Python not found. Install Python 3.14 from python.org and tick "Add to PATH".' }
+$Python = $Python.Trim()
 $DataDir = if ($env:KARMA_DATA_DIR) { $env:KARMA_DATA_DIR } else { Join-Path $env:USERPROFILE '.karma' }
 
 # 1. Domain -> this PC (dashboard stays loopback-only).
@@ -18,6 +25,9 @@ Import-Certificate -FilePath (Join-Path $DataDir 'tls\karma-local-ca.pem') -Cert
 
 # 3. Let the attacker PCs reach the decoys (all profiles, incl. hotspot 'Public' networks).
 Get-NetFirewallRule -DisplayName 'KARMA Honeypot' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+# Pressing Cancel on Windows' firewall prompt leaves inbound Block rules for python.exe; Block beats Allow.
+Get-NetFirewallApplicationFilter -Program $Python -ErrorAction SilentlyContinue | Get-NetFirewallRule |
+    Where-Object { $_.Direction -eq 'Inbound' -and $_.Action -eq 'Block' } | Remove-NetFirewallRule
 New-NetFirewallRule -DisplayName 'KARMA Honeypot' -Direction Inbound -Program $Python -Action Allow -Profile Any | Out-Null
 
 # 4. Warn about services already holding KARMA ports (e.g. Remote Desktop on 3389).

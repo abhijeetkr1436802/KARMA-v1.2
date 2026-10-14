@@ -24,6 +24,8 @@ class SensorManager:
         from backend.sensors.ftp_honeypot import FTPHoneypotServer
         from backend.sensors.web_honeypot import WebHoneypotServer, set_web_broadcast_callback
         set_web_broadcast_callback(self.broadcast)
+        from backend.sensors import tcp_server
+        tcp_server.broadcast_cb = self.broadcast
         with self.lock:
             for decoy in get_all_decoys():
                 id = decoy["id"]

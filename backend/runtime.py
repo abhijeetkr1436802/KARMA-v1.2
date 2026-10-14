@@ -3,6 +3,14 @@ import os
 from backend import config
 
 
+def ignore_connection_reset(loop, context):
+    """asyncio handler: Windows' Proactor loop logs a traceback whenever a client
+    (browser, scanner, attacker) drops a TCP connection. Harmless on a honeypot."""
+    if isinstance(context.get("exception"), ConnectionResetError):
+        return
+    loop.default_exception_handler(context)
+
+
 class InstanceLock:
     def __enter__(self):
         config.DATA_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)

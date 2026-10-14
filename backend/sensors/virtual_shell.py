@@ -8,7 +8,7 @@ import time
 import uuid
 
 import paramiko
-from backend import documents, database as db
+from backend import config, documents, database as db
 
 
 class VirtualShell:
@@ -27,14 +27,24 @@ class VirtualShell:
             '/root/README.txt': b'Corporate records are in /root and /srv/company.\nUse SFTP to download reports.\nSecurity lab: all records are synthetic.\n',
             '/srv/company/contacts.csv': b'account,contact\nCedar Manufacturing,operations@cedar.example\nMaple Logistics,finance@maple.example\n',
         }
-        self.doc_paths = {f'{directory}/{name}':name for directory in ('/root', '/srv/company') for name in documents.FILES}
+        present = documents.asset_files()
+        self.doc_paths = {f'{directory}/{name}':name for directory in ('/root', '/srv/company') for name in present}
         self.prepared = {}
         self.dirs.update({'/srv/company/finance','/srv/company/operations','/srv/company/reports','/srv/company/archive'})
         self.files['/srv/company/README.txt'] = b'Aegis Systems - Corporate Archive\nfinance/ - annual financial statements\nreports/ - company overview\noperations/ - service inventory\narchive/ - prior period notes\nSynthetic records for the KARMA lab.\n'
+        # Breadcrumb: a "leaked" deploy file holding the decoy API key and decoy credentials.
+        # Using either of them anywhere raises a honeytoken alert (web decoy / SSH login).
+        tokens = {t['token_id']: t['token_value'] for t in config.DEFAULT_HONEYTOKENS}
+        self.files['/srv/company/operations/deploy.env'] = (
+            '# Aegis customer portal - deployment settings (do not commit)\n'
+            f'API_BASE_URL=http://{local_address}:{config.PORT_WEB_HONEYPOT}/api/v1\n'
+            f'API_KEY={tokens["ht-aws-01"]}\n'
+            f'STAGING_SSH={tokens["ht-ssh-key"]}\n').encode()
         self.files['/srv/company/operations/services.csv'] = b'service,owner,status\nCustomer Portal,Platform Team,Active\nBilling,Finance Systems,Active\n'
         self.files['/srv/company/archive/2025-summary.txt'] = b'FY2025 archive index\nQuarterly reports consolidated into the annual financial statement.\n'
-        self.doc_paths['/srv/company/finance/company_financials_25-26.xlsx'] = 'company_financials_25-26.xlsx'
-        self.doc_paths['/srv/company/reports/company_data_2026.pdf'] = 'company_data_2026.pdf'
+        for folder, name in (('finance', 'company_financials_25-26.xlsx'), ('reports', 'company_data_2026.pdf')):
+            if name in present:
+                self.doc_paths[f'/srv/company/{folder}/{name}'] = name
         self.read_notified = set()
         self.history = []
         self.last_activity = time.monotonic()
@@ -155,7 +165,7 @@ class VirtualShell:
                 return f'{p}: {kind}, {a.st_size} bytes, {stat.filemode(a.st_mode)}\n', 0
             if name in ('mkdir','touch','cp','mv','rm','rmdir'):
                 if not paths: return f'{name}: missing operand\n',2
-                if len(self.files)+len(self.dirs)+len(self.doc_paths) >= 128: return 'bash: session file quota reached\n',1
+                if len(self.files)+len(self.dirs) >= 128: return 'bash: session file quota reached\n',1
                 p = self.path(paths[0])
                 if name in ('mkdir','touch'):
                     if posixpath.dirname(p) not in self.dirs: raise FileNotFoundError(posixpath.dirname(p))

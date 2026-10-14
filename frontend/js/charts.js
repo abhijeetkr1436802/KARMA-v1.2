@@ -144,7 +144,7 @@ function initLogTypesDoughnutChart() {
             const ctx2 = chart.ctx;
             chart.getDatasetMeta(0).data.forEach((arc, i) => {
                 const value = chart.data.datasets[0].data[i];
-                if (!value) return;
+                if (!value || !chart.getDataVisibility(i)) return;  // skip slices hidden via the legend
                 const { x, y } = arc.getCenterPoint();
                 ctx2.save();
                 ctx2.font = "800 14px 'Plus Jakarta Sans', sans-serif";

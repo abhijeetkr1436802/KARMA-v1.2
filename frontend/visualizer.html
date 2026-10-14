@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KARMA Live Shield</title>
+<title>KARMA Live Attack Map</title>
 <link rel="icon" href="/static/Project_Assets/logo_icon.ico">
 <style>
 :root{--bg:#060b16;--panel:#0d1526;--line:#1c2a44;--text:#e6edf7;--muted:#8a9bb8;--shield:#38bdf8;--honey:#f59e0b;--safe:#22c55e;--low:#38bdf8;--med:#facc15;--high:#fb923c;--crit:#ef4444}
@@ -32,8 +32,8 @@ svg{width:100%;height:100%;display:block}
 .lbl{fill:var(--text);font-weight:700;letter-spacing:.08em;font-size:17px}
 .sub{fill:var(--muted);font-size:13px}
 .mono{font-family:Consolas,"JetBrains Mono",monospace}
-#shieldGlow{transition:stroke-width .25s,opacity .25s}
-.flash #shieldGlow{stroke-width:46;opacity:.9}
+.lure circle{fill:none;stroke:var(--honey);stroke-width:2}
+.ghost{fill:none;stroke:#fca5a5;stroke-width:2;stroke-dasharray:4 10}
 .energy{stroke-dasharray:6 18;animation:flow 1.4s linear infinite}
 @keyframes flow{to{stroke-dashoffset:-48}}
 .pulse{animation:pulse 3s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
@@ -78,7 +78,7 @@ footer{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:18p
 <body>
 <header>
   <img src="/static/Project_Assets/logo_main.png" alt="">
-  <h1>K.A.R.M.A LIVE SHIELD<small>Every attack is drawn to the honeypot; the production server stays out of reach</small></h1>
+  <h1>K.A.R.M.A LIVE ATTACK MAP<small>Attackers aim at the production server. The KARMA honeypot pulls every attack into itself.</small></h1>
   <div class="stats">
     <div class="stat" id="sCaptured"><b>0</b><span>Attacks captured</span></div>
     <div class="stat" id="sAttackers"><b>0</b><span>Attackers seen</span></div>
@@ -93,19 +93,11 @@ footer{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:18p
 </header>
 
 <main id="stage"><div id="toasts" aria-live="assertive"></div>
-<svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Live diagram: attackers on the right fire at the KARMA shield, which captures every attack and keeps the production server safe">
+<svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Live diagram: attackers on the right aim at the production server on the left; each attack is pulled off course into the KARMA honeypot, so the production server is never reached">
   <defs>
-    <linearGradient id="gShield" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#38bdf8" stop-opacity=".15"/>
-      <stop offset=".5" stop-color="#7dd3fc"/>
-      <stop offset="1" stop-color="#38bdf8" stop-opacity=".15"/>
-    </linearGradient>
     <radialGradient id="gHoney" cx=".5" cy=".4" r=".7">
       <stop offset="0" stop-color="#fcd34d"/><stop offset="1" stop-color="#b45309"/>
     </radialGradient>
-    <pattern id="hex" width="28" height="48.5" patternUnits="userSpaceOnUse" patternTransform="scale(.8)">
-      <path d="M14 0l14 8v16l-14 8L0 24V8zM14 32.3v16.2" fill="none" stroke="#7dd3fc" stroke-width="1"/>
-    </pattern>
     <filter id="blur"><feGaussianBlur stdDeviation="9"/></filter>
     <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
   </defs>
@@ -123,15 +115,25 @@ footer{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:18p
     <text x="130" y="262" text-anchor="middle" class="lbl">PRODUCTION SERVER</text>
     <text x="130" y="284" text-anchor="middle" class="sub">Real company data</text>
     <rect x="45" y="300" width="170" height="30" rx="15" fill="#052e16" stroke="#22c55e"/>
-    <text x="130" y="320" text-anchor="middle" fill="#4ade80" font-size="13" font-weight="800" letter-spacing="1.5">● PROTECTED</text>
+    <text x="130" y="320" text-anchor="middle" fill="#4ade80" font-size="13" font-weight="800" letter-spacing="1.5">● UNTOUCHED</text>
   </g>
   <text x="280" y="728" text-anchor="middle" class="sub">Captured attacks that reached it: <tspan fill="#4ade80" font-weight="800">0</tspan></text>
 
-  <!-- Hidden link: production sits behind the decoy layer -->
-  <path d="M450 470 H600" stroke="#22c55e" stroke-opacity=".35" stroke-width="2" stroke-dasharray="4 8" class="energy"/>
+  <!-- Same company network: the honeypot sits next to production and looks just as real -->
+  <path d="M450 620 H740" fill="none" stroke="#22c55e" stroke-opacity=".35" stroke-width="2" stroke-dasharray="4 8" class="energy"/>
+  <text x="575" y="648" text-anchor="middle" class="sub">Same company network</text>
+
+  <!-- Lure field: rings keep falling inward, the honeypot attracts -->
+  <g class="lure" transform="translate(860 620)">
+    <circle r="240" opacity="0"><animate attributeName="r" values="250;100" dur="3s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;.45;0" dur="3s" repeatCount="indefinite"/></circle>
+    <circle r="240" opacity="0"><animate attributeName="r" values="250;100" dur="3s" begin="1s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;.45;0" dur="3s" begin="1s" repeatCount="indefinite"/></circle>
+    <circle r="240" opacity="0"><animate attributeName="r" values="250;100" dur="3s" begin="2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;.45;0" dur="3s" begin="2s" repeatCount="indefinite"/></circle>
+  </g>
+  <text x="860" y="352" text-anchor="middle" class="lbl" fill="#fbbf24">LURE FIELD</text>
+  <text x="860" y="374" text-anchor="middle" class="sub">Decoys look more valuable than the real server</text>
 
   <!-- KARMA honeypot -->
-  <g transform="translate(700 470)"><g id="honey" class="honey">
+  <g transform="translate(860 620)"><g id="honey" class="honey">
     <circle r="118" fill="none" stroke="#f59e0b" stroke-opacity=".18" stroke-width="2" class="pulse"/>
     <path d="M0-92l80 46v92L0 92l-80-46v-92z" fill="url(#gHoney)" stroke="#fde68a" stroke-width="3" filter="url(#glow)"/>
     <path d="M0-62l54 31v62L0 62l-54-31v-62z" fill="#78350f" fill-opacity=".55"/>
@@ -139,17 +141,7 @@ footer{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:18p
     <text y="16" text-anchor="middle" fill="#fde68a" font-size="12" font-weight="700" letter-spacing="2">HONEYPOT</text>
     <text id="honeyCount" y="42" text-anchor="middle" fill="#fff" font-size="18" font-weight="800" class="mono">0</text>
   </g></g>
-  <text x="700" y="620" text-anchor="middle" class="sub">Decoy services pretend to be real</text>
   <g id="chips"></g>
-
-  <!-- Shield -->
-  <g id="shield">
-    <path d="M900 110 Q1080 470 900 830 Q975 470 900 110Z" fill="url(#hex)" opacity=".22" class="pulse"/>
-    <path id="shieldGlow" d="M900 110 Q1080 470 900 830" fill="none" stroke="#38bdf8" stroke-width="30" opacity=".35" filter="url(#blur)"/>
-    <path d="M900 110 Q1080 470 900 830" fill="none" stroke="url(#gShield)" stroke-width="7" stroke-linecap="round"/>
-    <path d="M900 110 Q1080 470 900 830" fill="none" stroke="#e0f2fe" stroke-width="2" class="energy"/>
-    <text x="990" y="92" text-anchor="middle" class="lbl" fill="#7dd3fc">DECEPTION SHIELD</text>
-  </g>
 
   <g id="fx"></g>
   <g id="attackers"></g>
@@ -189,7 +181,8 @@ function el(tag, attrs = {}, parent) {
 function text(parent, attrs, value) { const t = el('text', attrs, parent); t.textContent = value; return t; }
 
 // Decoy chips around the honeypot
-const chipPos = [[700, 318, 'SSH'], [540, 400, 'FTP'], [540, 545, 'TELNET'], [860, 400, 'WEB'], [860, 545, 'RDP']];
+const PROD = [450, 470], KARMA = [860, 620];  // where attacks aim, where they end up
+const chipPos = [[860, 468, 'SSH'], [700, 550, 'FTP'], [700, 695, 'TELNET'], [1020, 550, 'WEB'], [1020, 695, 'RDP']];
 const chips = {};
 for (const [x, y, name] of chipPos) {
   const g = el('g', {class: 'chip', transform: `translate(${x - 38} ${y - 14})`}, $('#chips'));
@@ -213,6 +206,9 @@ function fingerprint(payload = '') {
   }
   return {os, tool};
 }
+
+// A quarantined attacker trying again: refused right at the source.
+const isRetry = ev => ev.attack_type === 'Blocked Connection (Quarantined)';
 
 function stage(ev) {
   if (ev.quarantined) return 'contain';
@@ -282,9 +278,18 @@ function updateStats() {
   for (const s of document.querySelectorAll('.step')) s.querySelector('em').textContent = counts[s.dataset.step];
 }
 
-// Shield curve: x(t) = 900 + 360t(1-t), y(t) = 110 + 720t
-const shieldPoint = y => { const t = Math.min(.96, Math.max(.04, (y - 110) / 720)); return [900 + 360 * t * (1 - t), 110 + 720 * t]; };
 const quad = (p0, c, p1, t) => [(1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * c[0] + t * t * p1[0], (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * c[1] + t * t * p1[1]];
+const lerp = (p, q, u) => [p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u];
+const smooth = (a, b, t) => { const x = Math.min(1, Math.max(0, (t - a) / (b - a))); return x * x * (3 - 2 * x); };
+
+// The attack heads for production; the honeypot's pull grows until it bends the attack in and swallows it.
+function lured(from, t, spin) {
+  const aimed = lerp(from, PROD, .7 * t);
+  const w = smooth(.18, 1, t) ** 1.4;
+  const [x, y] = lerp(aimed, KARMA, w);
+  const r = 70 * w * (1 - t), ang = spin + t * 5 * Math.PI;
+  return [x + Math.cos(ang) * r, y + Math.sin(ang) * r];
+}
 
 function animate(duration, step, done) {
   if (reduced) { step(1); done && done(); return; }
@@ -294,26 +299,31 @@ function animate(duration, step, done) {
 }
 
 function fire(a, ev) {
-  if (flying >= MAX_FLYING || document.hidden) return absorbed(ev);
+  if (flying >= MAX_FLYING || document.hidden) return isRetry(ev) ? null : absorbed(ev);
   flying++;
   const color = SEV[ev.severity] || SEV.MEDIUM;
   const from = [1430 - 44, a.y + (Math.random() - .5) * 30];
-  const hit = shieldPoint(a.y + (Math.random() - .5) * 120);
-  const ctrl = [(from[0] + hit[0]) / 2, Math.min(from[1], hit[1]) - 60 - Math.random() * 60];
   const fx = $('#fx');
+  // Where the attacker wanted to go: a dashed line to production that fades away.
+  const ghost = el('line', {x1: from[0], y1: from[1], x2: PROD[0], y2: PROD[1], class: 'ghost'}, fx);
+  animate(1600, t => ghost.setAttribute('opacity', .8 * (1 - t)), () => ghost.remove());
+  const retry = isRetry(ev);
+  const stop = retry ? lerp(from, PROD, .12) : KARMA;
+  const spin = Math.random() * Math.PI * 2;
   const trail = el('polyline', {fill: 'none', stroke: color, 'stroke-width': 3, 'stroke-linecap': 'round', opacity: .55}, fx);
   const head = el('circle', {r: 6, fill: color, filter: 'url(#glow)'}, fx);
   const pts = [];
-  animate(850 + Math.random() * 300, t => {
-    const [x, y] = quad(from, ctrl, hit, t * t * (3 - 2 * t));
+  animate(retry ? 450 : 1500 + Math.random() * 300, t => {
+    const [x, y] = retry ? lerp(from, stop, t) : lured(from, t, spin);
     head.setAttribute('cx', x); head.setAttribute('cy', y);
-    pts.push(`${x.toFixed(1)},${y.toFixed(1)}`); if (pts.length > 14) pts.shift();
+    pts.push(`${x.toFixed(1)},${y.toFixed(1)}`); if (pts.length > 18) pts.shift();
     trail.setAttribute('points', pts.join(' '));
   }, () => {
     head.remove(); trail.remove(); flying--;
-    impact(hit, color, ev);
-    if (ev.quarantined) containBeam(hit, a);
-    capture(hit, color, ev);
+    impact(stop, color, ev);
+    if (retry) return;
+    if (ev.quarantined) containBeam(stop, a);
+    absorbed(ev);
   });
 }
 
@@ -326,16 +336,10 @@ function impact([x, y], color, ev) {
     const s = el('circle', {r: 2.5, fill: color}, fx);
     animate(500, t => { s.setAttribute('cx', x + Math.cos(ang) * d * t + 20 * t); s.setAttribute('cy', y + Math.sin(ang) * d * t); s.setAttribute('opacity', 1 - t); }, () => s.remove());
   }
-  const shield = $('#shield'); shield.classList.add('flash'); setTimeout(() => shield.classList.remove('flash'), 220);
-  const label = text(fx, {x: x + 40, y: y - 10, class: 'float', fill: color}, ev.mitre_name || ev.attack_type || 'Attack');
+  // One caption at a time under the honeypot, so bursts of attacks stay readable.
+  document.querySelector('.float')?.remove();
+  const label = text(fx, {x: KARMA[0], y: KARMA[1] + 150, 'text-anchor': 'middle', class: 'float', fill: color}, ev.mitre_name || ev.attack_type || 'Attack');
   setTimeout(() => label.remove(), 1900);
-}
-
-function capture(from, color, ev) {
-  const to = [700, 470], ctrl = [820, from[1]];
-  const dot = el('circle', {r: 5, fill: '#fcd34d', filter: 'url(#glow)'}, $('#fx'));
-  animate(700, t => { const [x, y] = quad(from, ctrl, to, t); dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('r', 5 - t * 2); },
-    () => { dot.remove(); absorbed(ev); });
 }
 
 function absorbed(ev) {
@@ -375,7 +379,7 @@ function onEvent(ev, live = true) {
   const [a, isNew] = upsert(ev.attacker_ip, {os: fp.os, tool: fp.tool, last: Date.now(),
     count: (prev ? prev.count : 0) + 1, blocked: (prev && prev.blocked) || !!ev.quarantined});
   const st = stage(ev);
-  counts.captured++; counts[st]++;
+  counts.captured++; if (!isRetry(ev)) counts[st]++;
   if (!live) return;
   if (isNew || !a.el) layout(); else refresh(a);
   const step = document.querySelector(`.step[data-step="${st}"]`);
@@ -415,7 +419,7 @@ async function init() {
     for (const ev of [...logs].reverse()) {
       const fp = fingerprint(ev.payload);
       upsert(ev.attacker_ip, {os: fp.os, tool: fp.tool});
-      counts[stage(ev)]++;
+      if (!isRetry(ev)) counts[stage(ev)]++;
     }
     logs.slice(0, 6).reverse().forEach(ev => feed(ev));
   } catch (e) { if (e.message === 'login') return; }
