@@ -111,6 +111,13 @@ All three PCs must be on the **same network** so the attackers can reach the KAR
 - Attackers on a **different** network/router cannot reach the honeypot (private IPs behind NAT) unless
   you port-forward on the router — avoid that for a classroom demo.
 - Find the target IP with the command in step 4 above; attackers use that as `<KARMA-IP>`.
+- **Attacker on a different network (e.g. two phone hotspots), nothing installed on either PC:** in
+  **Honeypot & Decoy Control** press **Start Tunnel**. KARMA's built-in client connects out to the free public
+  [bore](https://github.com/ekzhang/bore) server `bore.pub` and each decoy gets a public address such as
+  `bore.pub:41234`. Use that host and port instead of `<KARMA-IP>` and the usual port (`ssh root@bore.pub -p 41234`,
+  `curl http://bore.pub:5xxxx/`, `nmap -sT -sV -p 41234 bore.pub`). Every tunnelled attacker appears as `127.0.0.1`,
+  so run one remote attacker at a time and unblock `127.0.0.1` between runs. FTP downloads don't work through the
+  tunnel; read `deploy.env` over SSH with `cat`. The addresses change each start.
 
 **Before going live (every rehearsal and the real demo):** in the dashboard set the mode to
 **Contain**, and in **Attacker Profiles** unblock both attacker IPs. Both settings are saved between runs.

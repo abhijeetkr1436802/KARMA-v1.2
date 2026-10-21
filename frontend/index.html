@@ -609,6 +609,23 @@
                     </div>
                 </div>
 
+                <!-- REMOTE DEMO: PUBLIC TUNNEL (bore) -->
+                <div class="widget-box width-100" style="margin-bottom: 20px;">
+                    <div class="widget-header">
+                        <h3>🌐 Remote Attacker on Another Network (Public Tunnel)</h3>
+                        <button class="btn btn-sm" id="tunnelBtn" onclick="toggleTunnel()">Start Tunnel</button>
+                    </div>
+                    <div class="widget-body">
+                        <p style="color: var(--text-secondary); font-size: 12px; margin: 0 0 12px; line-height: 1.5;">
+                            Opens each active decoy on a public address via the free <code>bore.pub</code> server, so a
+                            laptop on a different hotspot can attack with nothing installed. The dashboard is never exposed.
+                            Tunnelled attackers show up as <code>127.0.0.1</code>; unblock it in Attacker Profiles between runs.
+                            FTP file downloads don't work through the tunnel.
+                        </p>
+                        <div id="tunnelStatus" style="font-size: 12px; color: var(--text-muted);">Tunnel is off.</div>
+                    </div>
+                </div>
+
                 <!-- CSV SIEM AUDIT LOG MANAGER WIDGET -->
                 <div class="widget-box width-100" style="margin-top: 20px; margin-bottom: 20px;">
                     <div class="widget-header">

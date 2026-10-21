@@ -265,6 +265,7 @@ async function fetchDashboardData() {
 
         // Fetch Decoys
         fetchDecoys();
+        fetchTunnel();
 
         // Update World Map Markers
         updateMapMarkers(attackers);
@@ -357,6 +358,56 @@ function renderDecoyList(decoys) {
             </div>
         `;
     }).join('');
+}
+
+let tunnelEnabled = false;
+let tunnelBusy = false;
+const TUNNEL_HINTS = {
+    2222: a => `ssh root@${a.split(':')[0]} -p ${a.split(':')[1]}`,
+    8080: a => `http://${a}/`,
+};
+
+async function fetchTunnel() {
+    if (tunnelBusy) return;  // don't clobber an in-flight start/stop
+    try {
+        renderTunnel(await (await fetch('/api/tunnel')).json());
+    } catch (err) {
+        console.error('Error fetching tunnel status:', err);
+    }
+}
+
+function renderTunnel(s) {
+    tunnelEnabled = !!s.enabled;
+    const btn = document.getElementById('tunnelBtn');
+    const box = document.getElementById('tunnelStatus');
+    if (!btn || !box) return;
+    btn.disabled = false;
+    btn.textContent = s.enabled ? 'Stop Tunnel' : 'Start Tunnel';
+    const rows = Object.entries(s.ports || {}).map(([port, addr]) => addr
+        ? `<div>🟢 Port ${escapeHTML(port)} → <code>${escapeHTML(addr)}</code>` +
+          (TUNNEL_HINTS[port] ? ` &nbsp;e.g. <code>${escapeHTML(TUNNEL_HINTS[port](addr))}</code>` : '') + '</div>'
+        : `<div>🔴 Port ${escapeHTML(port)} failed</div>`).join('');
+    let html = rows || 'Tunnel is off.';
+    if (s.error) html += `<div style="margin-top:8px; color:#ef4444;">⚠️ ${escapeHTML(s.error)}</div>`;
+    box.innerHTML = html;
+}
+
+async function toggleTunnel() {
+    const btn = document.getElementById('tunnelBtn');
+    btn.disabled = true;
+    tunnelBusy = true;
+    btn.textContent = tunnelEnabled ? 'Stopping…' : 'Opening tunnels…';
+    try {
+        const res = await fetch('/api/tunnel', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: !tunnelEnabled })
+        });
+        renderTunnel(await res.json());
+    } catch (err) {
+        renderTunnel({ enabled: false, error: err.message });
+    } finally {
+        tunnelBusy = false;
+    }
 }
 
 async function toggleDecoyStatus(decoyId, enabled) {

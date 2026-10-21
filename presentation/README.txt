@@ -1,32 +1,44 @@
-KARMA — Exam Presentation Website
-=================================
+KARMA — Exam Presentation
+=========================
 
 HOW TO RUN (no internet needed)
 -------------------------------
-1. Double-click  index.html  — it opens in your browser.
-2. Press  F  for full screen.
+1. Double-click index.html. It opens in Chrome or Edge.
+2. Press F for full screen.
 3. Navigate:
-     Space / ↓ / →  ........ next slide
-     ↑ / ←  ................. previous slide
-     Home / End  ........... first / last slide
-     Click the dots on the right edge to jump.
+     Space / → / ↓ / PageDown ... next (some slides build step by step first)
+     ← / ↑ / PageUp ............. back
+     Home / End ................. first / last slide
+   A presentation clicker works too (it sends PageUp/PageDown).
 
-Everything (fonts, GSAP, three.js, the attack-map video, every
-screenshot) is inside this folder, so it works completely offline
-on any exam PC. Use a Chromium browser (Chrome / Edge) for best results.
+17 slides, about 10–15 minutes. It is designed at 1920×1080 and scales to any
+screen or projector.
 
-24 slides: problem → why honeypots → how they work → the KARMA
-reveal → every feature → the tech stack → Thank you → Q&A.
+SLIDES THAT BUILD (press → to advance inside the slide)
+  3  Breaches worldwide: each press lights the next company and shows its real headline
+  4  India: Star Health, Tata Technologies, CERT-In
+  8  How a honeypot works: Lure → Trap → Profile → Contain (you can also drag the slider)
+  9  KARMA: the letters open into the name
+  12, 13  Features: each press shows the next real KARMA screen, large
+  14  Anatomy of an attack: follow one keystroke through every library
+  15  Anatomy of the stack: the five layers, one by one
+
+LIVE SLIDE (11, "Type what an attacker types")
+  Click the command line and type, or click an example. The verdict uses the same
+  rules as KARMA's MITRE mapper and threat score. Press Esc before pressing
+  Space again, so Space moves the slides instead of typing.
 
 WHAT'S INSIDE
--------------
-  index.html        the presentation
-  styles.css        all styling
-  app.js            navigation, animations, diagrams
-  vendor/           GSAP, three.js, fonts (offline copies)
-  assets/shots/     real screenshots of your KARMA dashboard
-  assets/video/     real recording of the live attack map
-  assets/logo_*     KARMA logo
+  index.html, styles.css, app.js   the presentation
+  vendor/                          GSAP, three.js and fonts (offline copies)
+  assets/news/                     real headline screenshots (sources on each slide)
+  assets/shots/                    real screenshots of the KARMA dashboard
+  assets/video/                    real recording of the live attack map
+  assets/team/                     team photos
 
-TIP: run your real KARMA dashboard on a second screen or tab, so
-after the walkthrough you can switch to the live product for the demo.
+HEADLINE SOURCES
+  Salesforce  TechCrunch, 3 Oct 2025      Coupang  TechCrunch, 1 Dec 2025
+  Co-op       TechCrunch, 16 Jul 2025     JLR      City AM, 22 Oct 2025
+  Canvas      KrebsOnSecurity, 7 May 2026 Star Health  TechCrunch, 9 Oct 2024
+  Tata Tech.  BleepingComputer, 4 Mar 2025 CERT-In  Morung Express, 2026
+  Stats: IBM Cost of a Data Breach 2025; Verizon DBIR 2025.

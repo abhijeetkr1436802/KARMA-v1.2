@@ -19,6 +19,7 @@ from backend.engine.ai_analyst import generate_ai_threat_summary, generate_singl
 from backend.honeytokens import create_honeytoken
 from backend.decoy_state import initialize_decoys, toggle_decoy, add_custom_decoy
 from backend.sensors.manager import SensorManager
+from backend.tunnel import tunnels
 
 log = logging.getLogger(__name__)
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -87,6 +88,7 @@ async def lifespan(app):
                 await run_in_threadpool(sensors.start)
             yield
         finally:
+            await run_in_threadpool(tunnels.stop)
             await run_in_threadpool(sensors.stop)
             await manager.close()
             audit_csv_logger.stop()
@@ -301,6 +303,24 @@ def add_decoy(req: DecoyAddRequest):
         raise HTTPException(409, str(exc)) from exc
     sensors.reconcile()
     return {**result, "listeners": sensors.status()}
+
+
+class TunnelRequest(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/tunnel")
+def tunnel_status():
+    return tunnels.status()
+
+
+@app.post("/api/tunnel")
+def tunnel_toggle(req: TunnelRequest):
+    if req.enabled:
+        tunnels.start(d["port"] for d in sensors.status() if d["status"] == "ACTIVE")
+    else:
+        tunnels.stop()
+    return tunnels.status()
 
 
 def csv_path(filename):
