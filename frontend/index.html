@@ -971,105 +971,48 @@
                             mechanisms.
                         </p>
 
-                        <figure class="karma-how" aria-labelledby="karmaHowCaption">
-                            <svg viewBox="0 0 900 380" role="img" aria-label="Animation: an attacker scans the network. The first machine they touch in each row is a KARMA decoy that looks real. KARMA traps the attacker, alerts the admin's phone and quarantines the attacker, while the real servers and PCs are never reached.">
-                                <defs>
-                                    <g id="kServer">
-                                        <rect x="0" y="0" width="56" height="86" rx="8" class="k-bg"/>
-                                        <rect x="0" y="0" width="56" height="86" rx="8"/>
-                                        <path d="M12 16h32M12 28h32M12 40h32" stroke-width="4" stroke-linecap="round"/>
-                                        <circle cx="28" cy="62" r="5"/><circle cx="28" cy="75" r="3"/>
-                                    </g>
-                                    <g id="kPc">
-                                        <rect x="0" y="0" width="96" height="66" rx="6" class="k-bg"/>
-                                        <rect x="0" y="0" width="96" height="66" rx="6"/>
-                                        <rect x="10" y="10" width="76" height="10" rx="2"/>
-                                        <rect x="10" y="26" width="22" height="30" rx="2"/>
-                                        <rect x="38" y="26" width="48" height="30" rx="2"/>
-                                        <path d="M48 66v10M30 80h36" stroke-width="5" stroke-linecap="round"/>
-                                    </g>
-                                    <path id="kHex" d="M0-13l11 6.5v13L0 13l-11-6.5v-13z"/>
-                                </defs>
+                        <figure class="karma-trap" aria-labelledby="karmaTrapCap">
+                            <div class="kt-view">
+                                <div class="kt-stage">
+                                    <!-- REAL machines (back), shielded and calm -->
+                                    <div class="kt-cube kt-real" style="left:140px;top:-120px;--w:58px;--d:58px;--h:40px;"><span class="sh"></span><span class="tp"><span class="kt-face"></span></span><span class="fr"></span><span class="ft"></span></div>
+                                    <div class="kt-cube kt-real" style="left:150px;top:-20px;--w:58px;--d:58px;--h:40px;"><span class="sh"></span><span class="tp"><span class="kt-face"></span></span><span class="fr"></span><span class="ft"></span></div>
+                                    <div class="kt-cube kt-real" style="left:120px;top:90px;--w:58px;--d:58px;--h:40px;"><span class="sh"></span><span class="tp"><span class="kt-face"></span></span><span class="fr"></span><span class="ft"></span></div>
+                                    <div class="kt-shield" style="left:140px;top:-120px;">
+                                        <svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5l8-3z" fill="#34d399" stroke="#047857" stroke-width="1.5"/><path d="M8.5 12l2.5 2.5 4.5-5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                    </div>
 
-                                <!-- network -->
-                                <path class="k-line" d="M190 222H245Q260 222 260 207V110Q260 95 275 95H860"/>
-                                <path class="k-line" d="M260 237V280Q260 295 275 295H860"/>
+                                    <!-- DECOY (the first machine the probe touches) -->
+                                    <div class="kt-cube kt-decoy" style="left:-30px;top:-30px;--w:72px;--d:72px;--h:52px;">
+                                        <span class="sh"></span><span class="halo"></span>
+                                        <span class="tp"><span class="kt-face"></span></span><span class="fr"></span><span class="ft"></span>
+                                    </div>
+                                    <div class="kt-token" style="left:-30px;top:-30px;"></div>
+                                    <div class="kt-ring"></div>
 
-                                <!-- attacker -->
-                                <g class="k-attacker" transform="translate(70 150)">
-                                    <circle class="k-quarantine" cx="55" cy="60" r="78" opacity="0"><animate attributeName="opacity" dur="8s" repeatCount="indefinite" values="0;0;1;1;0" keyTimes="0;.80;.82;.97;1"/></circle>
-                                    <path d="M14 122V96Q14 62 52 58Q90 62 90 96V122Z"/>
-                                    <path d="M26 62Q22 16 52 12Q82 16 78 62Q66 52 52 52Q38 52 26 62Z"/>
-                                    <ellipse cx="52" cy="40" rx="13" ry="15" class="k-face"/>
-                                    <path d="M66 112L76 72L122 72L112 112Z" class="k-laptop"/>
-                                    <path d="M54 113h70" stroke-width="5" stroke-linecap="round" class="k-laptop"/>
-                                    <text x="55" y="160" text-anchor="middle" class="k-cap">Attacker</text>
-                                    <text x="55" y="-28" text-anchor="middle" class="k-cap k-red" opacity="0">Quarantined<animate attributeName="opacity" dur="8s" repeatCount="indefinite" values="0;0;1;1;0" keyTimes="0;.80;.82;.97;1"/></text>
-                                </g>
+                                    <!-- ATTACKER -->
+                                    <div class="kt-cube kt-atk" style="left:-170px;top:10px;--w:60px;--d:60px;--h:46px;"><span class="sh"></span><span class="tp"><span class="skull">💀</span></span><span class="fr"></span><span class="ft"></span></div>
+                                    <div class="kt-probe"></div>
+                                    <div class="kt-cage" style="left:-170px;top:10px;"><span class="cf"></span><span class="cs"></span><span class="ct"></span></div>
+                                </div>
 
-                                <!-- top row: KARMA decoy server first, then real servers -->
-                                <g transform="translate(320 52)" class="k-decoy">
-                                    <use href="#kServer"/>
-                                    <rect class="k-hit" x="-8" y="-8" width="72" height="102" rx="12" opacity="0"><animate attributeName="opacity" dur="8s" repeatCount="indefinite" values="0;0;1;.45;.45;0" keyTimes="0;.28;.30;.40;.97;1"/></rect>
-                                    <g transform="translate(56 0)"><use href="#kHex" class="k-hex"/><text y="4.5" text-anchor="middle" class="k-hexk">K</text></g>
-                                </g>
-                                <g class="k-real"><use href="#kServer" x="470" y="52"/><use href="#kServer" x="610" y="52"/><use href="#kServer" x="750" y="52"/></g>
+                                <!-- flat overlay: labels, admin phone, alert, verdict -->
+                                <div class="kt-ui">
+                                    <div class="kt-tag red"   style="left:20%;top:44%;">💀 Attacker scanning</div>
+                                    <div class="kt-tag amber" style="left:50%;top:18%;"><b>KARMA decoy</b>
+                                        <span class="kt-ports"><i>SSH&nbsp;2222</i><i>WEB&nbsp;8080</i><i>FTP&nbsp;21</i></span>
+                                    </div>
+                                    <div class="kt-tag green" style="left:80%;top:40%;">Real servers · safe</div>
 
-                                <!-- bottom row: KARMA decoy PC first, then real PCs -->
-                                <g transform="translate(300 262)" class="k-decoy">
-                                    <use href="#kPc"/>
-                                    <rect class="k-hit" x="-8" y="-8" width="112" height="98" rx="12" opacity="0"><animate attributeName="opacity" dur="8s" repeatCount="indefinite" values="0;0;1;.45;.45;0" keyTimes="0;.65;.67;.77;.97;1"/></rect>
-                                    <g transform="translate(96 0)"><use href="#kHex" class="k-hex"/><text y="4.5" text-anchor="middle" class="k-hexk">K</text></g>
-                                </g>
-                                <g class="k-real"><use href="#kPc" x="460" y="262"/><use href="#kPc" x="610" y="262"/><use href="#kPc" x="760" y="262"/></g>
-
-                                <text x="348" y="168" text-anchor="middle" class="k-cap k-amber">KARMA decoy</text>
-                                <text x="680" y="168" text-anchor="middle" class="k-cap">Real servers: never reached</text>
-                                <text x="348" y="372" text-anchor="middle" class="k-cap k-amber">KARMA decoy</text>
-                                <text x="660" y="372" text-anchor="middle" class="k-cap">Real PCs: never reached</text>
-
-                                <!-- admin phone, buzzes when a decoy is touched -->
-                                <g transform="translate(860 170)" class="k-phone">
-                                    <rect x="-16" y="-28" width="32" height="56" rx="6"/>
-                                    <circle cx="0" cy="18" r="3"/>
-                                    <text x="0" y="-38" text-anchor="middle" class="k-cap">Admin</text>
-                                </g>
-
-                                <!-- the two probes and their effects, all on one 8 s loop -->
-                                <g class="k-fx">
-                                    <circle r="7" class="k-probe" opacity="0">
-                                        <animateMotion dur="8s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;.05;.28;1" calcMode="linear" path="M190 222H245Q260 222 260 207V110Q260 95 275 95H318"/>
-                                        <animate attributeName="opacity" dur="8s" repeatCount="indefinite" values="0;1;1;0;0" keyTimes="0;.05;.27;.28;1"/>
-                                    </circle>
-                                    <circle r="7" class="k-probe" opacity="0">
-                                        <animateMotion dur="8s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;.42;.65;1" calcMode="linear" path="M190 222H245Q260 222 260 237V280Q260 295 275 295H298"/>
-                                        <animate attributeName="opacity" dur="8s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;.42;.43;.64;.65;1"/>
-                                    </circle>
-                                    <circle cx="348" cy="95" r="20" class="k-ring" opacity="0">
-                                        <animate attributeName="r" dur="8s" repeatCount="indefinite" values="20;20;80;80" keyTimes="0;.28;.40;1"/>
-                                        <animate attributeName="opacity" dur="8s" repeatCount="indefinite" values="0;0;1;0;0" keyTimes="0;.28;.29;.40;1"/>
-                                    </circle>
-                                    <circle cx="348" cy="295" r="20" class="k-ring" opacity="0">
-                                        <animate attributeName="r" dur="8s" repeatCount="indefinite" values="20;20;80;80" keyTimes="0;.65;.77;1"/>
-                                        <animate attributeName="opacity" dur="8s" repeatCount="indefinite" values="0;0;1;0;0" keyTimes="0;.65;.66;.77;1"/>
-                                    </circle>
-                                    <circle r="5" class="k-alert" opacity="0">
-                                        <animateMotion dur="8s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;.30;.40;1" calcMode="linear" path="M380 140Q620 150 842 160"/>
-                                        <animate attributeName="opacity" dur="8s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;.30;.31;.39;.40;1"/>
-                                    </circle>
-                                    <circle r="5" class="k-alert" opacity="0">
-                                        <animateMotion dur="8s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;.67;.77;1" calcMode="linear" path="M400 245Q620 230 842 182"/>
-                                        <animate attributeName="opacity" dur="8s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;.67;.68;.76;.77;1"/>
-                                    </circle>
-                                    <text x="860" y="226" text-anchor="middle" class="k-cap k-amber" opacity="0">Alert sent
-                                        <animate attributeName="opacity" dur="8s" repeatCount="indefinite" values="0;0;1;1;0;0;1;1;0" keyTimes="0;.40;.41;.55;.56;.77;.78;.92;1"/>
-                                    </text>
-                                </g>
-                            </svg>
-                            <figcaption id="karmaHowCaption" class="karma-how-steps">
-                                <p><b>Attacker scans the network.</b> They look for the most interesting server or PC.</p>
-                                <p><b>KARMA decoys look real.</b> Fake SSH, FTP, web and RDP services, files and keys sit among real machines.</p>
-                                <p><b>First touch, trapped.</b> KARMA logs it, alerts the admin's phone and quarantines the attacker. Real systems are never reached.</p>
+                                    <div class="kt-admin"><span class="ping"></span><span class="bell">📳</span></div>
+                                    <div class="kt-alert"></div>
+                                    <div class="kt-verdict">🔒 CONTAINED</div>
+                                </div>
+                            </div>
+                            <figcaption id="karmaTrapCap" class="kt-steps">
+                                <div class="s"><b>1 · Attacker probes</b><p>A scan sweeps the network hunting for a way in — the most interesting server or PC.</p></div>
+                                <div class="s"><b>2 · Decoy springs</b><p>The first host it touches is a KARMA honeypot. Fake SSH, web &amp; FTP plus honeytokens make it look real.</p></div>
+                                <div class="s"><b>3 · Trapped &amp; contained</b><p>KARMA logs it, pings the admin and quarantines the attacker. The real machines are never reached.</p></div>
                             </figcaption>
                         </figure>
 
