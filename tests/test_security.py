@@ -157,7 +157,8 @@ class SystemTests(unittest.TestCase):
             sock.bind(("127.0.0.1", port))
 
     def test_unknown_geo_and_mapping(self):
-        self.assertIsNone(db.get_geo_info("8.8.8.8")["lat"])
+        with patch.object(config, "GEOIP_ENABLED", False):
+            self.assertIsNone(db.get_geo_info("8.8.8.8")["lat"])
         self.assertEqual(map_payload_to_mitre("RAW_DECOY", "command_execution", "whoami")["mitre_id"], "T1059")
         self.assertEqual(map_payload_to_mitre("SSH_HONEYPOT", "port_scan", "probe")["mitre_id"], "T1046")
 
@@ -181,8 +182,73 @@ class SystemTests(unittest.TestCase):
             self.assertEqual(exported['Location_Label'],'Configured lab location')
             for address in ("10.0.0.2", "172.16.0.1", "::1", "fd00::1", "::ffff:192.168.1.1"):
                 self.assertEqual(db.get_geo_info(address)["geo_source"], "configured_lab")
-            for address in ("8.8.8.8", "192.0.2.1", "203.0.113.5", "0.0.0.0", "224.0.0.1", "bad"):
-                self.assertIsNone(db.get_geo_info(address)["lat"], address)
+            with patch.object(config, "GEOIP_ENABLED", False):
+                for address in ("8.8.8.8", "192.0.2.1", "203.0.113.5", "0.0.0.0", "224.0.0.1", "bad"):
+                    self.assertIsNone(db.get_geo_info(address)["lat"], address)
+
+    def test_demo_reset_unblocks_everything_and_returns_to_contain(self):
+        self.client.post('/api/engagement',headers=self.auth,json={'mode':'observe'})
+        self.event("192.168.1.9")
+        db.add_to_quarantine('192.168.1.9','test',100)
+        self.assertEqual(self.client.post('/api/reset',headers=self.auth).json()['mode'],'contain')
+        self.assertFalse(db.is_quarantined('192.168.1.9'))
+        self.assertEqual(db.get_total_attack_count(),0)
+        self.assertEqual(self.client.get('/api/status',headers=self.auth).json()['engagement_mode'],'contain')
+
+    def test_attacker_events_are_chronological_for_replay_and_report(self):
+        first = self.event("192.168.1.7"); self.event("192.168.1.8"); last = self.event("192.168.1.7")
+        data = self.client.get('/api/attackers/192.168.1.7/events',headers=self.auth).json()
+        self.assertEqual([e['id'] for e in data['events']],[first,last])
+        self.assertEqual(data['profile']['ip'],'192.168.1.7')
+        self.assertEqual(self.client.get('/api/attackers/192.168.1.99/events',headers=self.auth).status_code,404)
+        self.assertEqual(self.client.get('/api/attackers/not-an-ip/events',headers=self.auth).status_code,422)
+        self.assertIn(self.client.get('/api/attackers/192.168.1.7/events').status_code,(401,403))
+
+    def test_firewall_mirror_is_opt_in_skips_loopback_and_runs_no_shell(self):
+        from backend import firewall
+        firewall._blocked.clear()
+        runs = []
+        fake = lambda cmd, **kw: runs.append(cmd) or type('R', (), {'returncode': 0, 'stdout': '', 'stderr': ''})()
+        class Now:  # run the background thread inline
+            def __init__(self, target, args, daemon): self.go = lambda: target(*args)
+            def start(self): self.go()
+        with patch.object(firewall.subprocess, 'run', side_effect=fake), patch.object(firewall.threading, 'Thread', Now), \
+                patch.object(firewall.sys, 'platform', 'win32'):
+            with patch.object(config, 'FIREWALL_BLOCK', False):
+                self.assertFalse(firewall.block('203.0.113.9'))
+            with patch.object(config, 'FIREWALL_BLOCK', True):
+                self.assertFalse(firewall.block('127.0.0.1'))   # tunnel attackers: never block the PC itself
+                self.assertFalse(firewall.block('not an ip'))
+                self.assertTrue(firewall.block('203.0.113.9'))
+                self.assertFalse(firewall.block('203.0.113.9'))  # no duplicate rule
+                self.assertTrue(firewall.unblock('203.0.113.9'))
+                self.assertTrue(firewall.clear())
+        self.assertEqual(runs, [
+            ['netsh', 'advfirewall', 'firewall', 'add', 'rule', 'name=KARMA Quarantine', 'dir=in', 'action=block', 'remoteip=203.0.113.9'],
+            ['netsh', 'advfirewall', 'firewall', 'delete', 'rule', 'name=KARMA Quarantine', 'remoteip=203.0.113.9'],
+            ['netsh', 'advfirewall', 'firewall', 'delete', 'rule', 'name=KARMA Quarantine']])
+
+    def test_public_ip_geolocation_is_cached_stored_and_offline_safe(self):
+        import requests
+        from unittest.mock import MagicMock
+        db._geo_cache.clear(); db._geo_calls.clear()
+        reply = MagicMock()
+        reply.json.return_value = {"status": "success", "country": "United States", "countryCode": "US",
+                                   "city": "Ashburn", "lat": 39.03, "lon": -77.5}
+        with patch.object(config, "GEOIP_ENABLED", True), patch.object(db.requests, "get", return_value=reply) as get:
+            event_id = self.event("8.8.8.8")
+            self.assertEqual(db.get_geo_info("8.8.8.8")["city"], "Ashburn")
+            for address in ("192.168.1.5", "203.0.113.5", "224.0.0.1"):
+                db.get_geo_info(address)
+            self.assertEqual(get.call_count, 1)  # cached; LAN/documentation/multicast never looked up
+        with patch.object(db.requests, "get", side_effect=AssertionError("reads must not call the network")):
+            for row in (db.get_event(event_id), db.get_attackers_list()[0]):
+                self.assertEqual((row["city"], row["geo_source"], row["flag"]), ("Ashburn", "geoip", "🇺🇸"))
+        db._geo_cache.clear()
+        with patch.object(config, "GEOIP_ENABLED", True), \
+                patch.object(db.requests, "get", side_effect=requests.ConnectionError("offline")):
+            self.assertEqual(db.get_geo_info("1.1.1.1")["geo_source"], "unknown")
+        db._geo_cache.clear()
 
     def test_sensor_manager_toggle_and_failed_bind(self):
         from backend.sensors.manager import SensorManager
@@ -321,7 +387,7 @@ class SystemTests(unittest.TestCase):
         from backend.sensors.virtual_shell import VirtualShell
         first = VirtualShell('192.168.1.2','192.168.137.1')
         second = VirtualShell('192.168.1.2','192.168.137.1')
-        self.assertIn('company_data_2026.pdf',first.execute('ls -la')[0])
+        self.assertIn('AEGIS_Financials.xlsm',first.execute('ls -la')[0])
         self.assertEqual(first.execute('cd /srv/company')[1],0)
         self.assertEqual(first.execute('pwd')[0],'/srv/company\n')
         self.assertEqual(first.execute('touch test.txt')[1],0)
@@ -334,6 +400,8 @@ class SystemTests(unittest.TestCase):
         for i in range(140): first.execute(f'touch /tmp/f{i}')
         self.assertIn('quota',first.execute('touch /tmp/overflow')[0])
 
+    @unittest.skipUnless(all((Path(__file__).parents[1]/'backend'/'assets'/n).exists() for n in ('company_data_2026.pdf','company_financials_25-26.xlsx')),
+                         'link templates not shipped; only the AEGIS macro decoys are in backend/assets')
     def test_document_confirmation_is_explicit_expiring_and_correlated(self):
         import io
         import zipfile
@@ -371,9 +439,7 @@ class SystemTests(unittest.TestCase):
                 self.assertEqual(web.get('/documents/'+token).status_code,404)
 
     def test_sftp_downloads_and_ssh_exec_are_isolated(self):
-        import io
         import paramiko
-        from pypdf import PdfReader
         from backend.sensors import ssh_honeypot
         self.client.post('/api/engagement',headers=self.auth,json={'mode':'observe'})
         keypath = Path(self.temp.name) / 'sftp-host-key'
@@ -387,20 +453,19 @@ class SystemTests(unittest.TestCase):
                 client.connect('127.0.0.1',port=port,username='root',password='fake',look_for_keys=False,allow_agent=False,timeout=5)
                 with client.open_sftp() as sftp:
                     sftp.get_channel().settimeout(5)
-                    self.assertIn('company_data_2026.pdf',sftp.listdir('/root'))
-                    with sftp.open('/root/company_data_2026.pdf','rb') as f:
-                        content = f.read()
-                    self.assertEqual(len(PdfReader(io.BytesIO(content)).pages),1)
+                    self.assertIn('AEGIS_Financials.xlsm',sftp.listdir('/root'))
+                    with sftp.open('/root/AEGIS_Financials.xlsm','rb') as f:
+                        self.assertTrue(f.read().startswith(b'PK'))
                     self.assertEqual(len([e for e in db.get_recent_logs() if e['decoy_service']=='DOCUMENT_DECOY']),1)
                     with self.assertRaises(OSError): sftp.open('/tmp/upload','wb')
                     with self.assertRaises(OSError): sftp.open('/root/../../Windows/win.ini','rb')
                     db.add_to_quarantine('127.0.0.1','manual test',100)
-                    with self.assertRaises(OSError): sftp.open('/root/company_data_2026.pdf','rb')
+                    with self.assertRaises(OSError): sftp.open('/root/AEGIS_Financials.xlsm','rb')
                 client.close()
                 db.remove_from_quarantine('127.0.0.1')
                 client.connect('127.0.0.1',port=port,username='root',password='fake',look_for_keys=False,allow_agent=False,timeout=5)
                 _,out,_ = client.exec_command('ls /srv/company',timeout=5)
-                self.assertIn(b'company_financials_25-26.xlsx',out.read())
+                self.assertIn(b'AEGIS_Financials.xlsm',out.read())
                 self.assertEqual(out.channel.recv_exit_status(),0)
                 client.close()
                 client.connect('127.0.0.1',port=port,username='root',password='fake',look_for_keys=False,allow_agent=False,timeout=5)

@@ -46,6 +46,8 @@ LAB_CITY = os.environ.get("KARMA_LAB_CITY", "Bengaluru")
 LAB_COUNTRY = os.environ.get("KARMA_LAB_COUNTRY", "India")
 LAB_LAT = float(os.environ.get("KARMA_LAB_LAT", "12.9716"))
 LAB_LNG = float(os.environ.get("KARMA_LAB_LNG", "77.5946"))
+# Public attacker IPs are located with the free ip-api.com service (cached; set 0 for fully offline use).
+GEOIP_ENABLED = os.environ.get("KARMA_GEOIP_ENABLED", "1") == "1"
 CALLBACK_BASE_URL = os.environ.get("KARMA_CALLBACK_BASE_URL", "")
 ENGAGEMENT_MODE = os.environ.get("KARMA_ENGAGEMENT_MODE", "contain")
 if ENGAGEMENT_MODE not in ("observe", "contain"):
@@ -73,6 +75,8 @@ DECOY_PORTS = [21, 23, 3389]  # FTP, Telnet, RDP decoy probes
 
 # Threat scoring threshold for automated IP quarantine
 QUARANTINE_SCORE_THRESHOLD = 75
+# Also block quarantined IPs in Windows Firewall / iptables (needs Administrator/root). Off by default.
+FIREWALL_BLOCK = os.environ.get("KARMA_FIREWALL_BLOCK", "0") == "1"
 
 # DeepSeek AI Threat Intelligence & Cybersecurity Copilot Configuration
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")

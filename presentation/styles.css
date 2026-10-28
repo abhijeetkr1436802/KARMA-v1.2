@@ -272,4 +272,64 @@ code{font-family:Mono,monospace;font-size:.9em}
 .team figcaption b{display:block;font:700 28px/1.2 Sora,sans-serif;color:var(--ink);letter-spacing:-.02em}
 #end .note{position:absolute;left:var(--m);bottom:70px}
 
+/* objectives */
+.ledger-head .scope,.ledger-head .result{margin-top:34px;font-size:24px;line-height:1.4;max-width:760px}
+.goals{position:absolute;right:var(--m);top:200px;width:860px;list-style:none;display:flex;flex-direction:column;gap:30px}
+.goals li{display:grid;grid-template-columns:110px 1fr;align-items:baseline;font-size:30px;line-height:1.35}
+.goals .gn{font:800 64px/1 Sora,sans-serif;letter-spacing:-.04em;color:#b5ad9f}
+.goals b{font:700 30px Sora,sans-serif;letter-spacing:-.02em}
+
+/* existing tools */
+.cmp{position:absolute;left:var(--m);right:var(--m);top:400px;display:flex;flex-direction:column;gap:8px}
+.cr{display:grid;grid-template-columns:360px 1fr 1fr;gap:40px;padding:24px 36px;background:var(--raise);border-radius:6px;font-size:26px;line-height:1.3;align-items:baseline}
+.cr b{font:700 32px/1.1 Sora,sans-serif;letter-spacing:-.02em}
+.cr span{color:var(--soft)}
+.cr.ch{background:transparent;padding-top:0;padding-bottom:4px;font-size:20px}
+.cr.ch span{color:var(--soft)}
+.cr-karma{background:var(--amber);color:var(--amber-ink)}
+.cr-karma span{color:var(--amber-ink)}
+
+/* attack story: reuses the flow nodes */
+.node .tag{margin-top:18px;font:700 20px/1.2 Mono,monospace;color:#a33}
+.node.on .tag{color:var(--red)}
+
+/* cards */
+.cards{position:absolute;left:var(--m);right:var(--m);top:360px;display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.card{background:var(--raise);border-radius:8px;padding:34px 36px}
+.card h3{font:700 38px/1.05 Sora,sans-serif;letter-spacing:-.03em;color:var(--amber)}
+.card p{font-size:24px;line-height:1.4;margin-top:14px}
+.cards.two{left:auto;right:var(--m);top:200px;width:860px;height:700px;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:28px}
+#secure .ledger-head{width:760px}
+.cards.two .card{padding:40px 38px}
+.cards.two .card h3{font-size:42px}
+.cards.two .card p{font-size:27px;margin-top:20px}
+.f-amber .card{background:var(--amber-ink)}
+.f-amber .card p{color:var(--ink)}
+
+/* testing */
+.checks{position:absolute;right:var(--m);top:210px;width:860px;display:grid;grid-template-columns:1fr 1fr;gap:64px 44px}
+#tests .ledger-head{width:780px}
+.checks h3{font:700 38px/1.05 Sora,sans-serif;letter-spacing:-.03em}
+.checks p{font-size:25px;line-height:1.4;margin-top:12px;color:var(--paper-soft)}
+
+/* limits */
+.lim{position:absolute;left:var(--m);right:var(--m);top:340px;display:grid;grid-template-columns:1fr 1fr;gap:28px}
+.lim-col{background:var(--raise);border-radius:8px;padding:34px 40px}
+.lim-col h3{font:800 46px/1 Sora,sans-serif;letter-spacing:-.03em;margin-bottom:14px;color:var(--soft)}
+.lim-col p{font-size:25px;line-height:1.3;padding:11px 0;border-top:1px solid #2a2a2e}
+.lim{top:300px}
+.lim-col b{font-weight:600;color:var(--ink)}
+.lim-next h3{color:var(--amber)}
+
+/* conclusion */
+#conclude .mega{font-size:150px;max-width:1700px}
+.conclude-lede{margin-top:60px;font-size:34px;max-width:1300px}
+.conclude-note{position:absolute;left:var(--m);bottom:96px;font-size:26px}
+
+/* testing: the 14 system test cases */
+.tcs{position:absolute;right:var(--m);top:200px;width:880px;display:grid;grid-template-columns:1fr 1fr;gap:12px 20px}
+.tc{display:grid;grid-template-columns:96px 1fr auto;align-items:center;gap:14px;background:#ddd6c9;border-radius:6px;padding:16px 20px;font-size:22px;line-height:1.25}
+.tc code{font:700 20px Mono,monospace;color:var(--paper-soft)}
+.tc b{font:700 16px Mono,monospace;color:#1d6b35;letter-spacing:.06em}
+
 @media (prefers-reduced-motion:reduce){.grain{animation:none}.decoy-glow{animation:none}.term .cur{animation:none}}

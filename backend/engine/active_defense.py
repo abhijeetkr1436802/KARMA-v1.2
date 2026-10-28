@@ -1,10 +1,10 @@
 """
 Active Defense & Autonomous Quarantine Manager for Aegis-SOC
-Maintains the block list enforced by KARMA sensors. No OS firewall changes.
+Maintains the block list enforced by KARMA sensors; optionally mirrored to the OS firewall (backend/firewall.py).
 """
 
 from backend.config import QUARANTINE_SCORE_THRESHOLD
-from backend import config
+from backend import config, firewall
 from backend.database import add_to_quarantine, remove_from_quarantine, get_quarantine_list
 
 class ActiveDefenseManager:
@@ -42,20 +42,24 @@ class ActiveDefenseManager:
         if risk_score >= QUARANTINE_SCORE_THRESHOLD:
             reason = f"High Risk Score ({risk_score}/100) triggered by {mitre_name}"
             add_to_quarantine(attacker_ip, reason, risk_score)
+            firewall.block(attacker_ip)
             return True, f"IP {attacker_ip} automatically quarantined!"
 
         return False, "Score below threshold"
 
     def manual_quarantine(self, ip, reason="Manual Admin Containment Action"):
         add_to_quarantine(ip, reason, 100)
+        firewall.block(ip)
         return True, f"IP {ip} manually quarantined."
 
     def enforce_ip_quarantine(self, ip, reason="Honeytoken Trap Containment"):
         add_to_quarantine(ip, reason, 95)
+        firewall.block(ip)
         return True, f"IP {ip} quarantined."
 
     def manual_unblock(self, ip):
         remove_from_quarantine(ip)
+        firewall.unblock(ip)
         return True, f"IP {ip} removed from quarantine."
 
     def get_status(self):

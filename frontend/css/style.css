@@ -808,7 +808,7 @@ body {
 }
 
 .map-offline::after {
-    content: "Map tiles need an internet connection";
+    content: "Offline map: country outlines only";
     position: absolute;
     inset: 0;
     z-index: 450;
@@ -2429,3 +2429,21 @@ button.nav-item {
   .kt-token,.kt-shield{ /* keep tokens hidden, shields shown */ }
   .kt-token{ opacity:0; }
 }
+
+/* Session replay terminal */
+.replay-term {
+    background: #05070d;
+    color: #cbd5e1;
+    font: 14px/1.6 'JetBrains Mono', monospace;
+    padding: 18px 20px;
+    border-radius: 12px;
+    min-height: 320px;
+    max-height: 60vh;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+.replay-term .rp-prompt { color: #64748b; }
+.replay-term .rp-cmd { color: #f8fafc; }
+.replay-term .rp-tag { color: #f59e0b; }
+.replay-term .rp-blocked { color: #ef4444; font-weight: 700; }

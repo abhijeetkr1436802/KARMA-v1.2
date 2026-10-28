@@ -125,7 +125,7 @@
     <p class="lede shift-lede in">A <b>honeypot</b> is a decoy server that looks more valuable than the real one. Nobody has a reason to touch it, so anyone who does is an intruder.</p>
     <div class="versus">
       <div class="vs-col in"><h3>A firewall</h3><p>waits at the edge</p><p>blocks only what it already knows</p><p>thousands of alerts, most of them noise</p><p>sees nothing once they are inside</p></div>
-      <div class="vs-col vs-trap in"><h3>A honeypot</h3><p>invites the attacker in</p><p>treats any touch as an attack</p><p>zero false positives</p><p>records every move inside</p></div>
+      <div class="vs-col vs-trap in"><h3>A honeypot</h3><p>invites the attacker in</p><p>treats any touch as an attack</p><p>almost no false positives</p><p>records every move inside</p></div>
     </div>
   </section>
 
@@ -193,6 +193,35 @@
     <p class="lede reveal-sub in">In security, karma is an attack that comes back to its sender. KARMA turns your own network into the trap.</p>
   </section>
 
+  <!-- OBJECTIVES -->
+  <section class="slide f-paper" data-chapter="Objectives" data-id="goals">
+    <div class="ledger-head">
+      <h2 class="h2 split">What we set out to build.</h2>
+      <p class="lede in">One laptop that lures an attacker in, watches every move, names the technique and locks them out, live.</p>
+      <p class="note scope in"><b>Out of scope:</b> guarding a real production network, machine-learning detection, and multi-site deployment.</p>
+    </div>
+    <ol class="goals">
+      <li class="in"><span class="gn">01</span><span><b>Lure.</b> Convincing fake services: SSH, web portal, FTP, Telnet and RDP.</span></li>
+      <li class="in"><span class="gn">02</span><span><b>Record.</b> Log every command and request, without anything running on the host.</span></li>
+      <li class="in"><span class="gn">03</span><span><b>Classify.</b> Name each action with MITRE ATT&amp;CK and score its risk from 0 to 100.</span></li>
+      <li class="in"><span class="gn">04</span><span><b>Contain.</b> Quarantine high-risk attackers automatically.</span></li>
+      <li class="in"><span class="gn">05</span><span><b>Explain.</b> A live dashboard, attack map, phone alerts and an AI analyst.</span></li>
+    </ol>
+  </section>
+
+  <!-- EXISTING TOOLS -->
+  <section class="slide f-dark" data-chapter="Existing tools" data-id="compare">
+    <h2 class="h2 split">Others do one part. KARMA does the loop.</h2>
+    <div class="cmp">
+      <div class="cr ch in"><span>Tool</span><span>What it does</span><span>What it leaves to you</span></div>
+      <div class="cr in"><b>Firewall &amp; antivirus</b><span>Blocks traffic and files it already knows are bad</span><span>Blind to a valid, stolen login</span></div>
+      <div class="cr in"><b>Cowrie</b><span>SSH and Telnet honeypot that writes logs</span><span>No dashboard, no MITRE view, no blocking</span></div>
+      <div class="cr in"><b>T-Pot</b><span>Many honeypots with Elastic dashboards</span><span>Needs a Linux server running Docker; no automatic containment</span></div>
+      <div class="cr in"><b>Wazuh</b><span>SIEM that collects logs from agents</span><span>No decoys; an agent on every host</span></div>
+      <div class="cr cr-karma in"><b>KARMA</b><span>Decoys, SIEM, MITRE mapping, auto-quarantine and an AI analyst</span><span>One Python process on one laptop</span></div>
+    </div>
+  </section>
+
   <!-- 10 · LIVE MAP -->
   <section class="slide f-dark" data-chapter="Live attack map" data-id="map">
     <video class="map-vid" id="mapVid" muted loop playsinline preload="auto" poster="assets/video/attack-map.jpg"><source src="assets/video/attack-map.webm" type="video/webm"><source src="assets/video/attack-map.mp4" type="video/mp4"></video>
@@ -228,6 +257,21 @@
     <p class="note type-note">These verdicts come from the same rules KARMA's engine uses.</p>
   </section>
 
+  <!-- ATTACK STORY -->
+  <section class="slide f-paper" data-chapter="The demo story" data-id="story" data-steps="5">
+    <h2 class="h2 flow-h split">Steal the keys. Trip the alarm.</h2>
+    <div class="flow" id="storyFlow">
+      <div class="node on" data-i="0"><div class="lib">Recon</div><div class="job"><code>nmap -sT -sV</code> finds open ports</div><div class="tag">T1046 · logged</div></div>
+      <div class="node" data-i="1"><div class="lib">Web recon</div><div class="job"><code>robots.txt</code> and a forgotten <code>TODO(dev)</code> comment point to the file server</div><div class="tag">T1595 · logged</div></div>
+      <div class="node" data-i="2"><div class="lib">Break-in</div><div class="job"><code>ssh root@… -p 2222</code>, any password, a fake Ubuntu shell</div><div class="tag">every command logged</div></div>
+      <div class="node" data-i="3"><div class="lib">Loot</div><div class="job">downloads <code>deploy.env</code> and the AEGIS Word, Excel and PowerPoint files</div><div class="tag">Decoy file read alert</div></div>
+      <div class="node" data-i="4"><div class="lib">Use the key</div><div class="job">sends the stolen API key or password back to KARMA</div><div class="tag">T1078 · risk 95</div></div>
+      <div class="node" data-i="5"><div class="lib">Contained</div><div class="job">every new attempt is refused</div><div class="tag">BLOCKED</div></div>
+    </div>
+    <p class="say" id="storySay"></p>
+    <p class="note flow-note"><b>Contain</b> mode blocks only high-risk acts. <b>Observe</b> mode never blocks, so the whole story can be rehearsed.</p>
+  </section>
+
   <!-- 12 · FEATURES A -->
   <section class="slide f-dark" data-chapter="Inside KARMA" data-id="featA" data-steps="2">
     <h2 class="h2 feat-h split">One console for the whole hunt.</h2>
@@ -255,6 +299,19 @@
         <img class="fp on" data-i="0" src="assets/shots/f-decoys.jpg" alt="Decoy control">
         <img class="fp" data-i="1" src="assets/shots/f-ai-copilot.jpg" alt="AI SOC copilot">
         <img class="fp" data-i="2" src="assets/shots/f-alerts.jpg" alt="Alerts settings">
+    </div>
+  </section>
+
+  <!-- AROUND IT -->
+  <section class="slide f-dark" data-chapter="Inside KARMA" data-id="around">
+    <h2 class="h2 feat-h split">And everything around it.</h2>
+    <div class="cards">
+      <div class="card in"><h3>Phishing analyzer</h3><p>Drop in a <code>.eml</code> e-mail: headers, links and urgency tricks are scored Legitimate, Suspicious or Malicious.</p></div>
+      <div class="card in"><h3>Decoy documents</h3><p>Macro-enabled AEGIS Word, Excel and PowerPoint files. The download itself raises an alert.</p></div>
+      <div class="card in"><h3>Launcher &amp; tester</h3><p>A desktop control panel picks the decoys; a built-in tester fires sample attacks at them.</p></div>
+      <div class="card in"><h3>One-click <code>.exe</code></h3><p><code>setup.py</code> packs everything with PyInstaller. It runs on any Windows PC without Python.</p></div>
+      <div class="card in"><h3>A real HTTPS name</h3><p><code>karma-honeypot.com</code> on the KARMA PC, with its own trusted local certificate.</p></div>
+      <div class="card in"><h3>Reachable anywhere</h3><p>A built-in tunnel gives the decoys a public address. The attacker installs nothing.</p></div>
     </div>
   </section>
 
@@ -295,6 +352,45 @@
     </div>
   </section>
 
+  <!-- SECURITY OF KARMA -->
+  <section class="slide f-amber" data-chapter="Security of KARMA" data-id="secure">
+    <div class="ledger-head">
+      <h2 class="h2 split">Built to be attacked.</h2>
+      <p class="lede in">A honeypot invites attackers in, so KARMA itself has to be hard to break.</p>
+    </div>
+    <div class="cards two">
+      <div class="card in"><h3>Nothing runs</h3><p>The shell is simulated: no programs, pipes, installs or host files. Sessions end after 15 minutes.</p></div>
+      <div class="card in"><h3>Console stays private</h3><p>The dashboard answers only the KARMA PC, needs a 43-character admin token, and logs out after 8 hours.</p></div>
+      <div class="card in"><h3>Floods are capped</h3><p>10 logins and 600 requests a minute per IP; 64 clients per decoy.</p></div>
+      <div class="card in"><h3>Secrets stay hidden</h3><p>Captured passwords are blanked out of the logs; API keys live in a git-ignored <code>.env</code>.</p></div>
+    </div>
+  </section>
+
+  <!-- TESTING -->
+  <section class="slide f-paper" data-chapter="Testing" data-id="tests">
+    <div class="ledger-head">
+      <h2 class="h2 split">Fourteen tests. All passed.</h2>
+      <p class="lede in">The system test cases from our project report, run against the live platform: every decoy, the detection engine, containment, the dashboard and the AI.</p>
+      <p class="note result in">Automated checks also run on Windows and Linux for every change.</p>
+    </div>
+    <div class="tcs">
+      <div class="tc in"><code>TC-01</code><span>Risk score bands and cap</span><b>PASS</b></div>
+      <div class="tc in"><code>TC-02</code><span>MITRE mapping of six payloads</span><b>PASS</b></div>
+      <div class="tc in"><code>TC-03</code><span>SSH login and fake shell</span><b>PASS</b></div>
+      <div class="tc in"><code>TC-04</code><span>Web injections and probes</span><b>PASS</b></div>
+      <div class="tc in"><code>TC-05</code><span>FTP, Telnet and RDP decoys</span><b>PASS</b></div>
+      <div class="tc in"><code>TC-06</code><span>Honeytoken URL and API traps</span><b>PASS</b></div>
+      <div class="tc in"><code>TC-07</code><span>Auto-quarantine, block, unblock</span><b>PASS</b></div>
+      <div class="tc in"><code>TC-08</code><span>Burst of 25 rapid probes</span><b>PASS</b></div>
+      <div class="tc in"><code>TC-09</code><span>CSV audit: one row per event</span><b>PASS</b></div>
+      <div class="tc in"><code>TC-10</code><span>REST API counts agree</span><b>PASS</b></div>
+      <div class="tc in"><code>TC-11</code><span>Phishing e-mail flagged</span><b>PASS</b></div>
+      <div class="tc in"><code>TC-12</code><span>AI Copilot answer and fallback</span><b>PASS</b></div>
+      <div class="tc in"><code>TC-13</code><span>Dashboard refused from outside</span><b>PASS</b></div>
+      <div class="tc in"><code>TC-14</code><span>Decoy switched off and on</span><b>PASS</b></div>
+    </div>
+  </section>
+
   <!-- 16 · NUMBERS -->
   <section class="slide f-amber" data-chapter="By the numbers" data-id="nums">
     <div class="ledger-head">
@@ -304,9 +400,41 @@
     <div class="ledger">
       <div class="row in"><span class="fig" data-count="5">0</span><span class="cap">decoy services: SSH, web, FTP, Telnet and RDP</span></div>
       <div class="row in"><span class="fig" data-count="6">0</span><span class="cap">MITRE ATT&amp;CK techniques recognised automatically</span></div>
-      <div class="row in"><span class="fig" data-count="41">0</span><span class="cap">automated regression tests, all passing</span></div>
-      <div class="row in"><span class="fig" data-count="0">0</span><span class="cap">attacks that ever reach the real server</span></div>
+      <div class="row in"><span class="fig" data-count="14">0</span><span class="cap">system test cases, all passed</span></div>
+      <div class="row in"><span class="fig" data-count="0">0</span><span class="cap">attacker commands ever run on the host PC</span></div>
     </div>
+  </section>
+
+  <!-- LIMITATIONS & FUTURE -->
+  <section class="slide f-dark" data-chapter="Limitations and future scope" data-id="limits">
+    <h2 class="h2 split">Where it goes next.</h2>
+    <div class="lim">
+      <div class="lim-col in"><h3>Today</h3>
+        <p>One laptop and one SQLite file, not a distributed SIEM.</p>
+        <p>Rule-based detection; a careful attacker can phrase around it.</p>
+        <p>Geolocation is city-level and approximate; VPNs show the provider.</p>
+        <p>Through the tunnel every attacker appears as 127.0.0.1.</p>
+        <p>Quarantine blocks KARMA's decoys, not the OS firewall.</p>
+        <p>One admin token, no user roles.</p>
+      </div>
+      <div class="lim-col lim-next in"><h3>Future scope</h3>
+        <p><b>Firewall integration:</b> enforce quarantine in Windows Firewall or iptables.</p>
+        <p><b>Distributed sensors</b> on many hosts, reporting to one KARMA server.</p>
+        <p><b>Scalable storage:</b> PostgreSQL or Elasticsearch with retention.</p>
+        <p><b>Richer decoys:</b> bigger fake filesystem, malware capture, SMB, MySQL, Redis.</p>
+        <p><b>Standard exports:</b> Syslog/CEF, STIX 2.1; alerts to Telegram or Slack.</p>
+        <p><b>Smarter analytics:</b> session clustering, anomaly detection, more ATT&amp;CK techniques.</p>
+        <p><b>Local AI model,</b> so no telemetry leaves the organisation.</p>
+        <p><b>Role-based access</b> and a multi-tenant dashboard.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONCLUSION -->
+  <section class="slide f-amber" data-chapter="Conclusion" data-id="conclude">
+    <h2 class="mega split">They came for our data. | We got theirs.</h2>
+    <p class="lede conclude-lede in">KARMA shows that one ordinary laptop can lure, profile and contain an attacker in real time: decoys, SIEM, MITRE mapping and active defence in a single Python process.</p>
+    <p class="note conclude-note in">Every attacker who touches the trap leaves their IP, tools, commands and intent behind.</p>
   </section>
 
   <!-- 17 · THANK YOU -->
@@ -316,7 +444,7 @@
       <figure class="in"><img src="assets/team/Abhijeet_DP.png" alt="Abhijeet Kumar"><figcaption><b>Abhijeet Kumar</b>Core architect &amp; lead developer</figcaption></figure>
       <figure class="in"><img src="assets/team/Kanaka_C_DP.png" alt="Kanaka C"><figcaption><b>Kanaka C</b>Security analyst &amp; frontend</figcaption></figure>
       <figure class="in"><img src="assets/team/Raghu_TV_DP.png" alt="Raghunandan T V"><figcaption><b>Raghunandan T V</b>Backend</figcaption></figure>
-      <figure class="in"><img src="assets/team/Sanjay_DP.png" alt="Sanjay Kashyap"><figcaption><b>Sanjay Kashyap</b>Team</figcaption></figure>
+      <figure class="in"><img src="assets/team/Sanjay_DP.png" alt="Sanjay Kashyap"><figcaption><b>Sanjay Kashyap</b>Security QA &amp; penetration testing</figcaption></figure>
       <figure class="in guide"><img src="assets/team/Subhash_JR_DP.png" alt="Mr. Subhash J R"><figcaption><b>Mr. Subhash J R</b>Project guide</figcaption></figure>
     </div>
     <p class="note in">The honeypot is still running. Ask us anything.</p>

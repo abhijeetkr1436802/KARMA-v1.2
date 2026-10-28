@@ -123,7 +123,13 @@ const BASEMAPS = [
 function addBasemap(map, i = 0) {
     const base = BASEMAPS[i];
     if (!base) {
-        map.getContainer().classList.add('map-offline');  // every source failed: say so instead of a grey box
+        // Every tile source failed (no internet): draw bundled country outlines so markers still have a map.
+        map.getContainer().classList.add('map-offline');
+        map.setMaxZoom(5);   // country outlines only: deeper zoom would just show one flat country
+        fetch('/static/vendor/world-110m.json').then(r => r.json()).then(world => {
+            if (!map.getPane('offlineBase')) map.createPane('offlineBase').style.zIndex = 250;  // under the markers
+            L.geoJSON(world, { pane: 'offlineBase', interactive: false, style: { color: '#64748b', weight: 1, fillColor: '#1e293b', fillOpacity: 1 } }).addTo(map);
+        }).catch(() => {});
         return;
     }
     const options = { maxZoom: base.maxZoom, referrerPolicy: 'strict-origin-when-cross-origin', attribution: base.attribution };
@@ -498,7 +504,7 @@ function renderAttackersTable(attackers) {
         return `
             <tr>
                 <td class="font-mono" style="color: var(--accent-blue); font-weight: 600;">${a.ip}</td>
-                <td>${escapeHTML(flag)} ${escapeHTML(country)}${a.geo_source === 'configured_lab' ? `<br><small>${escapeHTML(a.city)} · Configured lab location</small>` : ''}</td>
+                <td>${escapeHTML(flag)} ${escapeHTML(country)}${a.geo_source === 'configured_lab' || a.geo_source === 'geoip' ? `<br><small>${escapeHTML(a.city)} · ${escapeHTML(a.geo_label)}</small>` : ''}</td>
                 <td class="font-mono" style="font-size: 11px; color: var(--text-muted);">${(a.last_seen || '').replace('T', ' ').substring(0, 16)}</td>
                 <td class="font-mono" style="text-align: center;">${a.total_attempts}</td>
                 <td class="font-mono" style="color: ${a.max_risk_score >= 75 ? '#ef4444' : '#10b981'}; font-weight: bold;">${a.max_risk_score} / 100</td>
@@ -506,6 +512,8 @@ function renderAttackersTable(attackers) {
                 <td>
                     <div style="display: flex; gap: 4px;">
                         <button class="btn btn-sm btn-primary" onclick="inspectAIReport('${a.ip}')">Inspect</button>
+                        <button class="btn btn-sm btn-secondary" onclick="replaySession('${a.ip}')" title="Replay this attacker's session">▶ Replay</button>
+                        <button class="btn btn-sm btn-secondary" onclick="openIncidentReport('${a.ip}')" title="Printable incident report">📄 Report</button>
                         ${actionBtn}
                     </div>
                 </td>
@@ -665,6 +673,127 @@ async function inspectAIReport(ip) {
     }
 }
 
+/* ---------- Session replay: the attacker's events, typed out in order ---------- */
+let replayTimer = null, replayEvents = [];
+function replayParts(e) {
+    const time = (e.timestamp || '').replace('T', ' ').substring(11, 19);
+    const payload = String(e.payload || '').slice(0, 300);
+    const cmd = payload.match(/^SSH Executed Command: '([\s\S]*)'$/);
+    return {
+        prompt: cmd ? `[${time}] root@aegis-gateway:~# ` : `[${time}] ${e.decoy_service} › `,
+        text: cmd ? cmd[1] : payload,
+        tag: `   ${e.mitre_id || ''} · risk ${e.risk_score}`,
+        blocked: !!e.quarantined
+    };
+}
+function replayAppend(term, cls, text) {
+    const span = document.createElement('span');
+    span.className = cls;
+    span.textContent = text;
+    term.appendChild(span);
+    return span;
+}
+function replayFinishLine(term, p) {
+    replayAppend(term, 'rp-tag', p.tag);
+    if (p.blocked) replayAppend(term, 'rp-blocked', '  → QUARANTINED');
+    term.appendChild(document.createTextNode('\n'));
+    term.scrollTop = term.scrollHeight;
+}
+function playReplay(term, i = 0) {
+    if (i >= replayEvents.length) { replayAppend(term, 'rp-prompt', '— end of session —'); return; }
+    const p = replayParts(replayEvents[i]);
+    replayAppend(term, 'rp-prompt', p.prompt);
+    const cmd = replayAppend(term, 'rp-cmd', '');
+    let k = 0;
+    const type = () => {
+        cmd.textContent = p.text.slice(0, ++k);
+        if (k < p.text.length) { replayTimer = setTimeout(type, 22); return; }
+        replayFinishLine(term, p);
+        replayTimer = setTimeout(() => playReplay(term, i + 1), 450);
+    };
+    replayTimer = setTimeout(type, 120);
+}
+async function replaySession(ip) {
+    const modal = document.getElementById('replayModal'), term = document.getElementById('replayTerm');
+    clearTimeout(replayTimer);
+    term.textContent = 'Loading session…';
+    document.getElementById('replayTitle').textContent = `Session replay · ${ip}`;
+    modal.classList.add('open');
+    try {
+        const res = await fetch(`/api/attackers/${encodeURIComponent(ip)}/events`);
+        if (!res.ok) throw new Error('No events for this IP');
+        replayEvents = (await res.json()).events;
+        term.textContent = '';
+        playReplay(term);
+    } catch (err) {
+        term.textContent = 'Could not load the session: ' + err.message;
+    }
+}
+function skipReplay() {
+    clearTimeout(replayTimer);
+    const term = document.getElementById('replayTerm');
+    term.textContent = '';
+    for (const e of replayEvents) {
+        const p = replayParts(e);
+        replayAppend(term, 'rp-prompt', p.prompt);
+        replayAppend(term, 'rp-cmd', p.text);
+        replayFinishLine(term, p);
+    }
+    replayAppend(term, 'rp-prompt', '— end of session —');
+}
+function closeReplay() {
+    clearTimeout(replayTimer);
+    document.getElementById('replayModal').classList.remove('open');
+}
+
+/* ---------- Printable incident report for one attacker ---------- */
+async function openIncidentReport(ip) {
+    const win = window.open('', '_blank');   // open now, inside the click, so pop-up blockers allow it
+    if (!win) { alert('Allow pop-ups for KARMA to open the report.'); return; }
+    win.document.write('<p style="font-family:sans-serif">Building incident report…</p>');
+    try {
+        const [ev, ai] = await Promise.all([
+            fetch(`/api/attackers/${encodeURIComponent(ip)}/events`).then(r => { if (!r.ok) throw new Error('No events for this IP'); return r.json(); }),
+            fetch(`/api/ai-report/${encodeURIComponent(ip)}`).then(r => r.ok ? r.json() : {})
+        ]);
+        const e = escapeHTML, p = ev.profile || {}, events = ev.events;
+        const techniques = [...new Map(events.filter(x => x.mitre_id).map(x => [x.mitre_id, x])).values()];
+        const where = [p.flag, p.city && p.city !== 'Unknown' ? p.city : '', p.country].filter(Boolean).join(' ');
+        const row = (k, v) => `<tr><th>${k}</th><td>${v}</td></tr>`;
+        const html = `<!doctype html><html><head><meta charset="utf-8"><title>KARMA Incident Report · ${e(ip)}</title>
+<style>body{font:14px/1.5 Inter,Segoe UI,sans-serif;color:#111;max-width:960px;margin:32px auto;padding:0 24px}
+h1{font-size:26px;margin:0}h2{font-size:17px;margin:28px 0 8px;border-bottom:2px solid #111;padding-bottom:4px}
+.sub{color:#555;margin:4px 0 0}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #ddd;vertical-align:top}
+.kv th{width:200px;color:#555;font-weight:600}.nw{white-space:nowrap}.mono{font-family:'JetBrains Mono',Consolas,monospace;font-size:12px;word-break:break-all}
+.risk{font-weight:700}.hi{color:#b91c1c}.bar{margin:20px 0}button{padding:8px 16px;font:inherit;cursor:pointer}
+@media print{.bar{display:none}body{margin:0}}</style></head><body>
+<div class="bar"><button onclick="print()">Print / Save as PDF</button></div>
+<h1>K.A.R.M.A Incident Report</h1>
+<p class="sub">Attacker ${e(ip)} · generated ${e(new Date().toLocaleString())}</p>
+<h2>Attacker profile</h2><table class="kv">
+${row('IP address', `<span class="mono">${e(ip)}</span>`)}
+${row('Location', `${e(where || 'Unknown')} <small>(${e(p.geo_label || 'Location unavailable')})</small>`)}
+${row('First seen', e((p.first_seen || events[0].timestamp || '').replace('T', ' ').slice(0, 19)))}
+${row('Last seen', e((p.last_seen || events[events.length - 1].timestamp || '').replace('T', ' ').slice(0, 19)))}
+${row('Total attempts', e(String(p.total_attempts ?? events.length)))}
+${row('Highest risk', `<span class="risk ${(p.max_risk_score || 0) >= 75 ? 'hi' : ''}">${e(String(p.max_risk_score ?? ''))} / 100</span>`)}
+${row('Status', e(p.status || 'MONITORING'))}
+${row('Intent', e(ai.intent_classification || '—'))}
+</table>
+<h2>Summary</h2><p>${e(ai.summary || 'No summary available.')}</p>
+<h2>MITRE ATT&amp;CK techniques observed</h2><table><tr><th>ID</th><th>Technique</th><th>Tactic</th></tr>
+${techniques.map(t => `<tr><td class="mono">${e(t.mitre_id)}</td><td>${e(t.mitre_name || '')}</td><td>${e(t.mitre_tactic || '')}</td></tr>`).join('')}</table>
+<h2>Recommended actions</h2><ul>${(ai.recommendations || []).map(r => `<li>${e(r)}</li>`).join('') || '<li>—</li>'}</ul>
+<h2>Timeline (${events.length} events)</h2><table><tr><th>Time (UTC)</th><th>Decoy</th><th>Technique</th><th>Risk</th><th>Activity</th></tr>
+${events.map(x => `<tr><td class="mono nw">${e((x.timestamp || '').replace('T', ' ').slice(0, 19))}</td><td>${e(x.decoy_service || '')}</td><td class="mono">${e(x.mitre_id || '')}</td><td class="risk ${x.risk_score >= 75 ? 'hi' : ''}">${e(String(x.risk_score))}${x.quarantined ? ' · blocked' : ''}</td><td class="mono">${e(String(x.payload || '').slice(0, 300))}</td></tr>`).join('')}</table>
+<p class="sub" style="margin-top:28px">Generated by K.A.R.M.A SIEM. Analysis is rule-based; locations are approximate. Captured passwords are redacted.</p>
+</body></html>`;
+        win.document.open(); win.document.write(html); win.document.close();
+    } catch (err) {
+        win.document.body.textContent = 'Could not build the report: ' + err.message;
+    }
+}
+
 async function toggleIPBlock(ip, action) {
     try {
         await fetch("/api/quarantine/toggle", {
@@ -809,7 +938,7 @@ function setupEventListeners() {
     const btnReset = document.getElementById("btnResetData");
     if (btnReset) {
         btnReset.addEventListener("click", async () => {
-            if (confirm("Reset all SIEM telemetry data and clear live charts?")) {
+            if (confirm("Demo reset: clear all telemetry, unblock every IP and switch to Contain mode?")) {
                 await fetch("/api/reset", { method: "POST" });
                 if (typeof resetCharts === "function") resetCharts();
                 fetchDashboardData();

@@ -4,29 +4,63 @@ A single-host honeypot monitoring application with an authenticated management d
 
 Developed by Abhijeet Kumar, Kanaka C, Raghunandan T V, and Sanjay Kashyap at The Oxford Evening Polytechnic, guided by Subhash J R.
 
-## Run locally
+## Documentation
 
-Tested with Python 3.14 on Windows. Install the locked runtime dependencies into your Python installation:
+- [Getting started](#getting-started-step-by-step) and [Live demo setup](#live-demo-setup-httpskarma-honeypotcom-with-windows-and-linux-attackers) (below)
+- [Decoys and attacks guide](docs/DECOYS_AND_ATTACKS.md): every decoy, trap and honeytoken and how to attack it
+- [Presentation speaker guide](docs/SPEAKER_GUIDE.md): what to say on each of the 25 slides
+- [Viva Q&A](docs/VIVA_QA.md): short answers to likely examiner questions
+
+## Getting started (step by step)
+
+Follow these steps in order on the Windows PC that will run KARMA.
+
+### Step 1 – Install the prerequisites
+
+| Software | Version | Download |
+| --- | --- | --- |
+| Python | 3.14 (the version KARMA is tested and locked with) | https://www.python.org/downloads/ |
+| Git | any recent version | https://git-scm.com/download/win |
+
+While installing Python, tick **"Add python.exe to PATH"** and keep **tcl/tk and IDLE** selected
+(Tkinter is needed for the desktop control panel).
+
+Open a new **PowerShell** window and check that both are installed:
 
 ```powershell
+python --version
+git --version
+```
+
+### Step 2 – Download the project (git clone)
+
+```powershell
+cd $HOME\Desktop
+git clone https://github.com/abhijeetkr1436802/KARMA-v1.2.git
+cd KARMA-v1.2
+```
+
+All later commands are run from inside this `KARMA-v1.2` folder.
+
+### Step 3 – Install the Python requirements
+
+```powershell
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-python run.py
 ```
 
-For a terminal server without Tkinter:
+`requirements.txt` holds the exact package versions KARMA was tested with (FastAPI, Uvicorn,
+Paramiko, WebSockets, Pydantic, Requests, python-multipart, pypdf). If a package is missing
+later, `run.py` stops and prints the exact install command for you.
+
+### Step 4 – (Optional) Create the `.env` settings file
+
+KARMA works without this step. Create it only if you want AI Copilot chat or your own settings:
 
 ```powershell
-python run.py --headless
+copy .env.example .env
+notepad .env
 ```
-
-### Configuration with a `.env` file
-
-Wherever you download KARMA, create a file named **`.env`** in the project root (copy
-`.env.example` to `.env` and edit it). KARMA loads it automatically on startup — from the
-project folder and from the data dir (`%USERPROFILE%/.karma`). Real environment variables
-always take precedence over `.env`.
-
-Minimal `.env` (only the AI key is commonly needed; everything else has defaults):
 
 ```env
 # Enables free-form AI Copilot chat. Without it, the offline analyst still
@@ -39,88 +73,340 @@ DEEPSEEK_API_KEY=sk-your-deepseek-key-here
 # KARMA_ENGAGEMENT_MODE=contain
 ```
 
-`.env` is git-ignored, so your key never gets committed. Restart KARMA after editing it.
+KARMA reads `.env` from the project folder and from the data folder `%USERPROFILE%\.karma`.
+Real environment variables always win over `.env`. `.env` is git-ignored, so your key is never
+committed. Restart KARMA after editing it. You can also paste the key into the launcher's
+**AI Copilot — DeepSeek API Key** field and press **Save Key** (it is saved to
+`%USERPROFILE%\.karma\.env` and works at once, also in the `.exe`).
 
-**Or add the key from the GUI (works in the packaged `.exe`):** launch `python run.py`,
-and in the desktop control panel use the **AI Copilot — DeepSeek API Key** field →
-**Save Key**. It writes the key to `%USERPROFILE%/.karma/.env` and applies it immediately,
-with no restart and no code access needed — ideal after building the executable.
+### Step 5 – Run KARMA
 
-Visit `http://localhost:8000`. On first startup a random admin token is saved to `%USERPROFILE%/.karma/admin-token`. Read that file locally and enter the token on the login page. Do not paste the token into chat or source control. Set `KARMA_ADMIN_TOKEN` to supply your own 32+ character random secret.
+```powershell
+python run.py
+```
 
-The management console is loopback-only in development, including API and WebSocket access. Browser sessions expire after eight hours. API clients use `Authorization: Bearer <token>`. Cookie-authenticated mutations require `X-Karma-Request: 1`; the dashboard supplies it automatically. Changing the token and restarting invalidates existing sessions.
+The **K.A.R.M.A control panel** window opens:
 
-## Live demo: https://karma-honeypot.com with Windows and Linux attackers
+1. Tick the decoy ports and traps you want.
+2. Press **🚀 LAUNCH K.A.R.M.A SIEM SERVER**.
+3. Open a browser on the same PC at **http://localhost:8000**.
 
-Three PCs on the same network (Wi-Fi, switch or the KARMA PC's mobile hotspot):
+If you ran the live demo setup (`tools\setup-demo.ps1`, see **Live demo setup** below), the dashboard is at **https://karma-honeypot.com** instead.
+
+No desktop / no Tkinter (for example a server terminal)? Run it without the window:
+
+```powershell
+python run.py --headless
+```
+
+To stop KARMA press **🛑 STOP K.A.R.M.A SIEM SERVER**, or `Ctrl+C` in headless mode.
+
+### Step 6 – Log in with the admin token
+
+The login page asks for an **admin token**.
+
+**Why it exists:** the dashboard can see every captured attack and can block or unblock IPs,
+change the engagement mode and clear logs. KARMA has no user accounts, so a single long random
+secret (the admin token) protects it. A random token cannot be guessed like a password, and it
+is different on every PC, so nobody can log in with a value copied from GitHub.
+
+**How it is created:** the first time the server starts, if you did not set `KARMA_ADMIN_TOKEN`,
+KARMA generates a random 43-character token with Python's `secrets.token_urlsafe(32)` and saves
+it to a file. Later starts reuse the same file, so the token stays the same.
+
+**Where it is stored:**
+
+```
+C:\Users\<your-user>\.karma\admin-token
+```
+
+Show it in PowerShell, then copy and paste it into the login page:
+
+```powershell
+Get-Content $env:USERPROFILE\.karma\admin-token
+```
+
+- The same `.karma` folder also holds the database (`karma.db`), logs, SSH host key and TLS files.
+- Want your own token? Put `KARMA_ADMIN_TOKEN=<32+ random characters>` in `.env` and restart.
+- Forgot or leaked it? Stop KARMA, delete `admin-token`, start again: a new token is created and
+  all old logins stop working.
+- Never paste the token into chat, screenshots or source control.
+
+Security details: the dashboard (port 8000) only accepts connections from this PC, including
+its API and WebSocket. Browser sessions expire after eight hours. API clients send
+`Authorization: Bearer <token>`. Cookie-authenticated changes require `X-Karma-Request: 1`;
+the dashboard adds it automatically.
+
+### Step 7 – (Optional) Build the standalone `.exe` with `setup.py`
+
+This makes a version that runs on any Windows PC **without Python, Git or pip**. Run it on
+the PC where Steps 1–3 are done:
+
+```powershell
+python setup.py
+```
+
+`setup.py` installs PyInstaller if it is missing, compiles KARMA, and creates:
+
+| Output | What it is |
+| --- | --- |
+| `dist\KARMA_Cloud_SIEM\KARMA_Cloud_SIEM.exe` | the application |
+| `dist\KARMA_Cloud_SIEM\HOW_TO_RUN.txt` | short usage notes |
+| `dist\KARMA_Cloud_SIEM_Standalone_v1.2.zip` | the whole folder zipped, to copy to another PC |
+
+**Run the standalone app:**
+
+1. Copy the zip to the target PC and extract it (keep the whole folder together — the `.exe`
+   needs the files next to it).
+2. Double-click **`KARMA_Cloud_SIEM.exe`**. If Windows SmartScreen warns, click
+   **More info → Run anyway** (the exe is not code-signed).
+3. Press **🚀 LAUNCH K.A.R.M.A SIEM SERVER** and open **http://localhost:8000**.
+4. Log in with the token from `%USERPROFILE%\.karma\admin-token` on **that** PC (Step 6).
+   Each PC gets its own token.
+
+Smoke-test the `.exe` on the target Windows version before the demo.
+
+### Step 8 – (Optional) Run the tests
+
+```powershell
+python -m pip install -r requirements-dev.txt
+python -B -m unittest discover -s tests -v
+node tests/frontend.test.cjs
+```
+
+The Node.js test needs Node.js installed (https://nodejs.org).
+
+### Getting updates later
+
+```powershell
+cd $HOME\Desktop\KARMA-v1.2
+git pull
+python -m pip install -r requirements.txt
+```
+
+## Live demo setup: https://karma-honeypot.com with Windows and Linux attackers
+
+Do Steps 1–3 of Getting started first: the setup script needs Python and the requirements.
+
+### What the demo looks like
 
 | PC | Role |
 | --- | --- |
-| KARMA PC (Windows) | Runs KARMA, shows the dashboard and the live visualizer |
-| Attacker 1 (Windows) | Scans and attacks the KARMA PC's LAN IP |
-| Attacker 2 (Linux) | Scans and attacks the KARMA PC's LAN IP |
+| KARMA PC (Windows) | Runs KARMA, shows the dashboard and the live visualizer on the projector |
+| Attacker 1 (Windows) | Scans and attacks the KARMA PC |
+| Attacker 2 (Linux) | Scans and attacks the KARMA PC |
 
-**One-time setup on the KARMA PC** (Administrator PowerShell, in the repo folder):
+Nothing needs to be installed on the attacker PCs: they use built-in tools (`ssh`, `curl`,
+`ftp`, a browser; `nmap` if it is already there).
+
+### What `karma-honeypot.com` is (and is not)
+
+`karma-honeypot.com` is **not a website on the internet** and you do **not** buy or register it.
+It is a local name that only works **on the KARMA PC**, made in two parts:
+
+1. **Name → this PC.** A line is added to the Windows *hosts* file
+   (`C:\Windows\System32\drivers\etc\hosts`):
+
+   ```
+   127.0.0.1 karma-honeypot.com www.karma-honeypot.com
+   ```
+
+   Windows checks this file before asking the internet, so on this PC the name opens KARMA itself.
+2. **Padlock (HTTPS).** `tools\make_cert.py` creates a private "KARMA Local Demo CA" and a
+   certificate for `karma-honeypot.com`, `www.karma-honeypot.com`, `localhost` and `127.0.0.1`.
+   The CA is added to Windows' *Trusted Root Certification Authorities*, so Edge and Chrome
+   show a valid padlock. The CA's private key is thrown away right after signing, so it can
+   never sign anything else.
+
+When the certificate exists, KARMA serves the dashboard at **https://karma-honeypot.com**
+(port 443) instead of http://localhost:8000. The dashboard still only accepts connections from
+the KARMA PC itself. Attacker PCs never use the domain; they target the KARMA PC's **IP address**
+(or a `bore.pub` tunnel address, see Demo step 6).
+
+To use a different name, put `KARMA_DOMAIN=your-name.com` in `.env` **before** running the
+setup script. The script and the certificate both read it from there.
+
+### Demo step 1 – Open PowerShell as Administrator
+
+The script edits the hosts file, the trusted certificate store and the firewall, which need
+administrator rights.
+
+1. Press **Start**, type **PowerShell**.
+2. Right-click **Windows PowerShell** → **Run as administrator** → **Yes**.
+   The title bar must say **Administrator**.
+3. Go to the project folder (use your own path from Step 2):
+
+   ```powershell
+   cd $HOME\Desktop\KARMA-v1.2
+   ```
+
+Use the same Windows account that will run KARMA: the certificate is saved in that
+account's `%USERPROFILE%\.karma\tls` folder.
+
+### Demo step 2 – Run `setup-demo.ps1` (with the execution-policy bypass)
 
 ```powershell
-python -m pip install -r requirements.txt
 powershell -ExecutionPolicy Bypass -File tools\setup-demo.ps1
 ```
 
-The script maps `karma-honeypot.com` to this PC, creates and trusts a local HTTPS certificate,
-allows Python through Windows Firewall on every network profile, warns about busy ports
-(turn off Remote Desktop if 3389 is taken) and prints the LAN IP the attackers should target.
-Then start KARMA with `python run.py`, launch the server and open:
+**Why `-ExecutionPolicy Bypass`?** By default Windows refuses to run `.ps1` scripts
+(error: *"running scripts is disabled on this system"*), and this script is not code-signed.
+`-ExecutionPolicy Bypass` starts a **new PowerShell process** that is allowed to run this one
+script. It does **not** change your PC's policy permanently; when the script ends, the normal
+policy applies again.
 
-- `https://karma-honeypot.com` for the dashboard
-- `https://karma-honeypot.com/visualizer` for the live attack map (attacks aimed at production get pulled into the honeypot). Press **Fullscreen** on the projector.
-
-The dashboard stays private to the KARMA PC; attackers only reach the decoys.
-Without the certificate, KARMA falls back to `http://localhost:8000`.
-
-### Manual setup (exactly what the script does, if you prefer to run steps by hand)
-
-Run each in an **Administrator PowerShell** in the repo folder:
+Alternative with the same effect (only for the current window, ends when you close it):
 
 ```powershell
-# 1. Point the domain at this PC (dashboard stays loopback-only)
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+.\tools\setup-demo.ps1
+```
+
+Do **not** use `Set-ExecutionPolicy Unrestricted` machine-wide; it is not needed.
+
+**What the script does, in order:**
+
+1. Finds the real `python.exe` (not the Microsoft Store shortcut) and reads KARMA's
+   domain and data folder from its settings.
+2. Adds the `127.0.0.1 karma-honeypot.com www.karma-honeypot.com` line to the hosts file
+   (only if it is not there yet) and flushes the DNS cache.
+3. Runs `tools\make_cert.py` and imports `karma-local-ca.pem` into
+   **Local Machine → Trusted Root Certification Authorities**.
+4. Creates an inbound Windows Firewall rule **KARMA Honeypot** that allows `python.exe` on all
+   network profiles (Domain, Private and Public, so phone hotspots work). It first removes any
+   old **Block** rule for Python, which Windows creates if someone pressed *Cancel* on the
+   firewall pop-up (Block wins over Allow).
+5. Warns if ports 21, 23, 443, 2222, 3389 or 8080 are already used by another program.
+6. Prints the dashboard URL and the KARMA PC's IP addresses for the attackers.
+
+Expected end of output:
+
+```
+Done. Start KARMA with: python run.py   then open https://karma-honeypot.com
+Attacker PCs target this PC's LAN address: 192.168.137.1, ...
+```
+
+If you see `WARNING: Port 3389 is already used by svchost`, Remote Desktop holds that port.
+Turn it off in **Settings → System → Remote Desktop → Off**, or simply leave the RDP decoy
+unticked in the launcher.
+
+The script is safe to run again. Each run creates a fresh certificate and adds one more
+"KARMA Local Demo CA" entry to the trusted store; remove old ones with the undo commands below
+if you like.
+
+### Demo step 3 – Manual setup (only if you cannot run the script)
+
+Run in the **Administrator PowerShell** from Demo step 1, in the project folder:
+
+```powershell
+# 1. Point the domain at this PC
 Add-Content "$env:SystemRoot\System32\drivers\etc\hosts" "`r`n127.0.0.1 karma-honeypot.com www.karma-honeypot.com"
 ipconfig /flushdns
 
-# 2. Create the HTTPS certificate and trust its local CA (enables https://karma-honeypot.com)
+# 2. Create the HTTPS certificate and trust its local CA
 python tools\make_cert.py
 Import-Certificate -FilePath "$env:USERPROFILE\.karma\tls\karma-local-ca.pem" -CertStoreLocation Cert:\LocalMachine\Root
 
 # 3. Allow the attacker PCs to reach the decoys through Windows Firewall
-New-NetFirewallRule -DisplayName 'KARMA Honeypot' -Direction Inbound -Program (Get-Command python).Source -Action Allow -Profile Any
+$Python = python -c "import sys; print(sys.executable)"
+New-NetFirewallRule -DisplayName 'KARMA Honeypot' -Direction Inbound -Program $Python -Action Allow -Profile Any
 
-# 4. Show this PC's LAN IP (the attacker PCs target this)
-Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' } | Select IPAddress
+# 4. Show this PC's IP addresses (the attacker PCs target this)
+Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' } | Select-Object InterfaceAlias, IPAddress
 ```
 
-To undo later: remove the `127.0.0.1 karma-honeypot.com` line from the hosts file,
-delete the `KARMA Honeypot` firewall rule, and remove the **KARMA Local Demo CA**
-from `certmgr.msc` → Trusted Root Certification Authorities.
+### Demo step 4 – Start KARMA and open the dashboard
 
-### Network setup for the demo
+Use a normal (non-admin) PowerShell in the project folder:
 
-All three PCs must be on the **same network** so the attackers can reach the KARMA PC's LAN IP:
+```powershell
+python run.py
+```
 
-- Easiest: turn on the KARMA PC's **mobile hotspot** and connect both attacker PCs to it, or put all
-  three on the same Wi-Fi/switch.
-- Attackers on a **different** network/router cannot reach the honeypot (private IPs behind NAT) unless
-  you port-forward on the router — avoid that for a classroom demo.
-- Find the target IP with the command in step 4 above; attackers use that as `<KARMA-IP>`.
-- **Attacker on a different network (e.g. two phone hotspots), nothing installed on either PC:** in
-  **Honeypot & Decoy Control** press **Start Tunnel**. KARMA's built-in client connects out to the free public
-  [bore](https://github.com/ekzhang/bore) server `bore.pub` and each decoy gets a public address such as
-  `bore.pub:41234`. Use that host and port instead of `<KARMA-IP>` and the usual port (`ssh root@bore.pub -p 41234`,
-  `curl http://bore.pub:5xxxx/`, `nmap -sT -sV -p 41234 bore.pub`). Every tunnelled attacker appears as `127.0.0.1`,
-  so run one remote attacker at a time and unblock `127.0.0.1` between runs. FTP downloads don't work through the
-  tunnel; read `deploy.env` over SSH with `cat`. The addresses change each start.
+1. Tick the decoys and press **🚀 LAUNCH K.A.R.M.A SIEM SERVER**.
+2. If Windows Firewall asks about Python, tick **Private and Public** and press **Allow**
+   (never *Cancel*).
+3. Open in **Edge or Chrome** (restart the browser once after the setup script):
+   - **https://karma-honeypot.com** – dashboard; log in with the admin token (Step 6 of Getting started)
+   - **https://karma-honeypot.com/visualizer** – live attack map for the projector; press **Fullscreen**
 
-**Before going live (every rehearsal and the real demo):** in the dashboard set the mode to
-**Contain**, and in **Attacker Profiles** unblock both attacker IPs. Both settings are saved between runs.
+Firefox uses its own certificate list: set `security.enterprise_roots.enabled` to `true` in
+`about:config`, or use Edge/Chrome. Without the certificate KARMA falls back to
+http://localhost:8000.
+
+### Demo step 5 – Connect the attacker PCs (same network)
+
+All three PCs must be on the **same network** so the attackers can reach the KARMA PC's IP:
+
+1. On the KARMA PC: **Settings → Network & Internet → Mobile hotspot → On**. Note the network
+   name and password. (Or put all three PCs on the same Wi-Fi/switch.)
+2. Connect both attacker PCs to that hotspot.
+3. The KARMA PC's hotspot address is usually **192.168.137.1**. Confirm it with the IPs printed
+   in Demo step 2. That address is `<KARMA-IP>` in the attack script below.
+4. Quick test from an attacker: `ssh root@<KARMA-IP> -p 2222` should show a login prompt.
+
+An attacker on a **different** network or router cannot reach a private IP behind NAT;
+use Demo step 6 instead of port-forwarding.
+
+### Demo step 6 – Attacker on a different network (e.g. two phone hotspots)
+
+Nothing is installed on either PC; the KARMA PC needs internet.
+
+1. In the dashboard, open **Honeypot & Decoy Control** and press **Start Tunnel**.
+2. KARMA's built-in client connects out to the free public [bore](https://github.com/ekzhang/bore)
+   server `bore.pub` (TCP port 7835) and shows a public address for each decoy, such as
+   `bore.pub:41234`. The addresses change on every start.
+3. The attacker uses that host and port instead of `<KARMA-IP>` and the usual port:
+   `ssh root@bore.pub -p 41234`, `curl http://bore.pub:<web-port>/`, `nmap -sT -sV -p 41234 bore.pub`.
+
+Limits: every tunnelled attacker appears as `127.0.0.1`, so run one remote attacker at a time
+and unblock `127.0.0.1` between runs. FTP downloads do not work through the tunnel; read
+`deploy.env` over SSH with `cat` instead. The dashboard port is never tunnelled.
+
+### Demo step 7 – Before going live (every rehearsal and the real demo)
+
+Press **🗑️ Reset System** (top right of the dashboard). In one click it clears all telemetry,
+unblocks every IP (including `127.0.0.1` from the tunnel) and switches the mode to **Contain**.
+
+During the demo, open **Threats Overview → Adversary Forensic Profiler** and, for an attacker:
+
+- **▶ Replay** plays back their whole session, command by command, with the MITRE technique and risk of each step.
+- **📄 Report** opens a printable incident report (profile, location, techniques, recommended actions,
+  full timeline). Use **Print / Save as PDF** to hand it in.
+
+### Undo the demo setup
+
+Run in an Administrator PowerShell:
+
+```powershell
+# Remove the karma-honeypot.com lines from the hosts file
+$h = "$env:SystemRoot\System32\drivers\etc\hosts"
+(Get-Content $h) | Where-Object { $_ -notmatch 'karma-honeypot\.com' } | Set-Content $h
+ipconfig /flushdns
+
+# Remove the firewall rule
+Remove-NetFirewallRule -DisplayName 'KARMA Honeypot'
+
+# Remove every KARMA Local Demo CA from the trusted store
+Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -eq 'CN=KARMA Local Demo CA' | Remove-Item
+
+# Optional: delete the certificate files so KARMA goes back to http://localhost:8000
+Remove-Item -Recurse "$env:USERPROFILE\.karma\tls"
+```
+
+### Troubleshooting
+
+| Problem | Fix |
+| --- | --- |
+| `running scripts is disabled on this system` | Use the `-ExecutionPolicy Bypass` command from Demo step 2 |
+| `Access to the path ... hosts is denied` / `Access is denied` | PowerShell is not running as Administrator (Demo step 1) |
+| `Python not found` or the Microsoft Store opens | Reinstall Python from python.org with **Add python.exe to PATH**; turn off the `python.exe` entries in **Settings → Apps → Advanced app settings → App execution aliases** |
+| `Could not load KARMA settings` | Run `python -m pip install -r requirements.txt` and run the script from the `KARMA-v1.2` folder |
+| `karma-honeypot.com` does not open | Start the server first; run `ipconfig /flushdns`; check the hosts line with `Get-Content $env:SystemRoot\System32\drivers\etc\hosts` |
+| Browser says *Not secure* | Restart the browser; use Edge/Chrome; re-run the setup script as the same Windows user that runs KARMA |
+| Attackers cannot connect | Same hotspot? Correct IP? Re-run the setup script (fixes firewall Block rules); check the attacker IP is not blocked in **Attacker Profiles** |
+| SSH says `Connection reset` | That attacker IP is quarantined; unblock it in **Attacker Profiles** |
+| `Port ... is already used` | Close the other program (Remote Desktop for 3389) or untick that decoy |
 
 **Attack script.** Replace `<KARMA-IP>` with the printed LAN IP. Run the rows top to bottom: everything
 before the **Finale** only raises the threat score; the Finale quarantines that attacker.
@@ -162,8 +448,9 @@ blocked. Only high-risk actions (SQL injection, honeytokens, `whoami`/`cat /etc/
 the attacker. After that, every new attempt from that IP is refused and logged as **BLOCKED** (at most
 one entry per port every 10 seconds). Use *Observe* to explore the fake shell freely.
 
-**Offline network:** the dashboard maps use Esri satellite imagery (OpenStreetMap as fallback) and the
-pages load fonts from the internet. Without internet the maps say so instead of showing tiles; everything else works.
+**Offline network:** fonts, charts and the map library are bundled, so the dashboard looks the same without
+internet. The maps use Esri satellite imagery (OpenStreetMap as fallback); with no internet they switch to
+bundled country outlines and still show every attacker marker. Public-IP geolocation needs internet.
 Don't press **Show** next to the DeepSeek key in the launcher while projecting.
 
 ## Network surfaces
@@ -177,7 +464,7 @@ Don't press **Show** next to the DeepSeek key in the launcher while projecting.
 
 The previous public traps on port 8000 have moved to 8080. The misleading demo “production vault” login has been removed. Try `/secret-vault-admin-login-php` or `/api/v1/auth/keys` on the web sensor. Only enable sensors in networks you administer. Port conflicts are reported as ERROR in the dashboard rather than ACTIVE. Custom decoys create TCP listeners; toggles change actual listener state. API trap toggles depend on the web sensor being enabled.
 
-Quarantine blocks new connections and subsequent interactions on KARMA sensors. It does **not** install OS firewall rules or isolate machines from other services. A triggering SSH login may now be rejected and later connections blocked; unblock the testing IP in the dashboard before repeating a demonstration. Desktop testing remains available from the launcher; the web API cannot launch desktop windows or attack simulations.
+Quarantine blocks new connections and subsequent interactions on KARMA sensors. By default it does **not** install OS firewall rules or isolate machines from other services. To also block quarantined IPs in **Windows Firewall** (or iptables on Linux), set `KARMA_FIREWALL_BLOCK=1` in `.env` and run KARMA as Administrator: each quarantine adds an inbound Block rule named **KARMA Quarantine**, Unblock and **Reset System** remove it, and `127.0.0.1` is never blocked so the tunnel can't cut the KARMA PC off from itself. Remove leftover rules with `netsh advfirewall firewall delete rule name="KARMA Quarantine"`. A triggering SSH login may now be rejected and later connections blocked; unblock the testing IP in the dashboard before repeating a demonstration. Desktop testing remains available from the launcher; the web API cannot launch desktop windows or attack simulations.
 
 ## AI SOC copilot
 
@@ -202,7 +489,8 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for TLS, service operation, backups, retentio
 ## Truthful analysis and privacy
 
 - Event/attacker reports and MITRE mappings are deterministic heuristics, not external AI verdicts.
-- Private LAN/loopback addresses use Bengaluru, India as an explicitly **configured lab location**, not a measured attacker origin. Public addresses remain unknown without a geolocation provider. See `.env.example` to disable or change the lab marker.
+- Private LAN/loopback addresses use Bengaluru, India as an explicitly **configured lab location**, not a measured attacker origin. See `.env.example` to disable or change the lab marker.
+- **Public** attacker IPs are located (city level) with the free [ip-api.com](https://ip-api.com) service when the event is logged: only the attacker's IP is sent, over plain HTTP (the free tier has no HTTPS). Results are cached for a day and stored with the event, and at most 40 lookups a minute are made (the free limit is 45). Without internet, or with `KARMA_GEOIP_ENABLED=0`, public IPs show as *Unknown*. IP geolocation is approximate: VPNs, proxies and cloud servers show the provider's location, not the person's.
 - Without `DEEPSEEK_API_KEY`, chat/email analysis falls back locally. The email heuristic does not certify a message as legitimate.
 - Configured email analysis sends headers and up to 2,500 characters of body text to DeepSeek. Chat sends the selected conversation history plus the live SIEM telemetry snapshot. This external send happens ONLY when DEEPSEEK_API_KEY is set; with no key the offline analyst reads the local database and nothing leaves the machine.
 - Email `Authentication-Results` headers are untrusted input. SPF/DKIM is not independently verified. Outlook binary `.msg` is unsupported; export RFC822 `.eml` instead.
@@ -239,31 +527,26 @@ before SSH negotiation. The server log now names the blocked address and listene
 For an approved interactive lab, choose Observe and unblock that specific test address.
 Changing mode alone does not remove existing blocks.
 
-Download actual synthetic reports from another terminal:
+Download the decoy documents from another terminal:
 
 ```powershell
 sftp -P 2222 root@192.168.137.1
 # At the sftp prompt:
-get /root/company_data_2026.pdf
-get /root/company_financials_25-26.xlsx
+get /root/AEGIS_Financials.xlsm
+get /root/AEGIS_Letterhead.docm
+get /root/AEGIS_Project_Atlas_Pitch.pptm
 bye
 ```
 
 The dashboard records **Decoy file read started** when the first bytes are requested.
-Open the PDF or workbook, follow **Open document acknowledgement page**, then click
-**Confirm document interaction**. A dashboard popup and retained event show the
-document, callback connection IP, original SSH connection IP, and session identifier.
-Opening the file alone sends no signal. The reports contain no macros, executable
-payloads or backdoors; a confirmation does not prove device compromise or identify a
-person. Link preview GET requests do not count as confirmations. Each explicit POST
-is a separate observation; scanners could submit forms too.
+Every file in `backend/assets` is offered in `/root` and `/srv/company`; drop a file in to
+offer it, remove it to withdraw it.
 
-Links use the SSH connection's local IP and port 8080 by default. For this LAN you can
-set `$env:KARMA_CALLBACK_BASE_URL="http://192.168.137.1:8080"` before launch. The web
-sensor must be enabled and reachable from the reader's machine. Links expire after
-seven days; the newest 10,000 document tokens are retained. Clearing telemetry revokes
-all document links. The committed PDF/XLSX are templates with inactive placeholder
-links; obtain personalized copies through SFTP for the demonstration.
+The AEGIS files are macro-enabled Office documents. If the reader clicks **Enable Content**,
+the macro only runs locally on the reader's PC: it writes a greeting text file to `%TEMP%`
+and opens it in Notepad, then opens a PowerShell window that runs `whoami`. It makes no
+network connection, installs nothing and does not persist. Opening a document sends no
+signal back to KARMA, so the download is the event the dashboard shows.
 
 For a changed SSH host-key warning, compare the reported fingerprint with the saved
 server key before removing the specific cached entry:
@@ -294,12 +577,8 @@ Admin
 pwd
 dir
 ls
-cd reports
 binary
-get company_data_2026.pdf
-cd ../finance
-get company_financials_25-26.xlsx
-cd ..
+get AEGIS_Financials.xlsm
 get README.txt
 bye
 ```
@@ -325,7 +604,7 @@ Tests use temporary databases and loopback ephemeral ports. They do not contact 
 
 ## Packaging
 
-Install PyInstaller separately in your build environment, then run `python setup.py`. The backend is collected as Python modules; runtime data and per-installation SSH keys are stored outside the executable bundle. The executable build is an optional distribution path and must be smoke-tested on the target Windows version.
+See **Step 7** in Getting started. Runtime data and per-installation SSH keys are stored in `%USERPROFILE%\.karma`, outside the executable bundle.
 
 ## License
 

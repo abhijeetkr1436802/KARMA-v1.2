@@ -6,6 +6,11 @@ Manages threat logs, attacker IP profiles, MITRE ATT&CK statistics, and honeytok
 import sqlite3
 import json
 import ipaddress
+import math
+import threading
+import time
+from collections import deque
+import requests
 from datetime import datetime, timezone
 from pathlib import Path
 from backend import config
@@ -17,18 +22,63 @@ LAB_NETWORKS = tuple(ipaddress.ip_network(n) for n in (
     "169.254.0.0/16", "fc00::/7", "fe80::/10", "::1/128"))
 
 
-def get_geo_info(ip):
-    """Explicit lab override only for LAN/loopback, not all non-global addresses."""
+GEO_URL = "http://ip-api.com/json/{}"   # free tier is HTTP only, 45 requests/minute
+GEO_PER_MINUTE = 40
+_geo_cache = {}                           # ip -> (expires, geo or None)
+_geo_calls = deque()
+_geo_lock = threading.Lock()
+
+
+def _lookup_public(ip):
+    """City-level location of a public IP from ip-api.com. Cached 1 day (failures 10 min)."""
+    now = time.monotonic()
+    with _geo_lock:
+        hit = _geo_cache.get(ip)
+        if hit and hit[0] > now:
+            return hit[1]
+        while _geo_calls and now - _geo_calls[0] > 60:
+            _geo_calls.popleft()
+        if len(_geo_calls) >= GEO_PER_MINUTE:
+            return None  # over the free limit: unknown for now, retried on a later event
+        _geo_calls.append(now)
+    geo = None
+    try:
+        data = requests.get(GEO_URL.format(ip), params={"fields": "status,country,countryCode,city,lat,lon"},
+                            timeout=3).json()
+        lat, lng = float(data["lat"]), float(data["lon"])
+        if data.get("status") == "success" and math.isfinite(lat) and math.isfinite(lng) \
+                and -90 <= lat <= 90 and -180 <= lng <= 180:
+            code = str(data.get("countryCode") or "")
+            flag = "".join(chr(0x1F1E6 + ord(c) - 65) for c in code.upper()) \
+                if len(code) == 2 and code.isascii() and code.isalpha() else "🌐"
+            geo = {"country": str(data.get("country") or "Unknown")[:80], "city": str(data.get("city") or "Unknown")[:80],
+                   "lat": lat, "lng": lng, "flag": flag,
+                   "geo_source": "geoip", "geo_label": "IP geolocation (ip-api.com)"}
+    except (requests.RequestException, ValueError, TypeError, KeyError):
+        pass
+    with _geo_lock:
+        if len(_geo_cache) >= 10000:
+            _geo_cache.clear()
+        _geo_cache[ip] = (now + (86400 if geo else 600), geo)
+    return geo
+
+
+def get_geo_info(ip, lookup=True):
+    """LAN/loopback -> configured lab location; public IP -> ip-api.com lookup (when lookup is allowed)."""
     try:
         address = ipaddress.ip_address(ip)
         address = getattr(address, "ipv4_mapped", None) or address
         local = any(address in network for network in LAB_NETWORKS)
     except ValueError:
-        local = False
+        address, local = None, False
     if local and config.LAB_LOCATION_ENABLED:
         return {"country": config.LAB_COUNTRY, "city": config.LAB_CITY,
                 "lat": config.LAB_LAT, "lng": config.LAB_LNG, "flag": "🌐",
                 "geo_source": "configured_lab", "geo_label": "Configured lab location"}
+    if lookup and config.GEOIP_ENABLED and address is not None and address.is_global and not address.is_multicast:
+        geo = _lookup_public(str(address))
+        if geo:
+            return dict(geo)
     return {"country": "Private network" if local else "Unknown", "city": "Unknown",
             "lat": None, "lng": None, "flag": "🌐", "geo_source": "unknown",
             "geo_label": "Location unavailable"}
@@ -37,8 +87,12 @@ def get_geo_info(ip):
 def with_location(row, ip_column="attacker_ip"):
     # Apply current configuration at read time to include historical LAN events.
     # Stored coordinates from earlier versions must not masquerade as measured geo.
+    # Public IPs keep the location looked up when the event was logged; reads never call the network.
     result = dict(row)
-    result.update(get_geo_info(result[ip_column]))
+    geo = get_geo_info(result[ip_column], lookup=False)
+    if geo["geo_source"] == "unknown" and result.get("geo_source") == "geoip":
+        return result
+    result.update(geo)
     return result
 
 

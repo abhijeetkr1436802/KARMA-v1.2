@@ -1,7 +1,6 @@
 # One-time setup on the KARMA PC (Windows). Run in an *Administrator* PowerShell from the repo folder:
 #   powershell -ExecutionPolicy Bypass -File tools\setup-demo.ps1
 $ErrorActionPreference = 'Stop'
-$Domain = if ($env:KARMA_DOMAIN) { $env:KARMA_DOMAIN } else { 'karma-honeypot.com' }
 # Ask Python itself: (Get-Command python) can return the Microsoft Store alias stub, not the interpreter.
 $Python = $null
 foreach ($cmd in @('python', 'py')) {
@@ -10,7 +9,10 @@ foreach ($cmd in @('python', 'py')) {
 }
 if (-not $Python) { throw 'Python not found. Install Python 3.14 from python.org and tick "Add to PATH".' }
 $Python = $Python.Trim()
-$DataDir = if ($env:KARMA_DATA_DIR) { $env:KARMA_DATA_DIR } else { Join-Path $env:USERPROFILE '.karma' }
+if (-not (Test-Path 'tools\make_cert.py')) { throw 'Run this script from the KARMA-v1.2 folder (cd into it first).' }
+# Ask KARMA's own config so .env / environment overrides (KARMA_DOMAIN, KARMA_DATA_DIR) match make_cert.py.
+$Domain, $DataDir = (& $Python -c "from backend import config; print(config.DOMAIN); print(config.DATA_DIR)")
+if (-not $DataDir) { throw 'Could not load KARMA settings. Run: python -m pip install -r requirements.txt' }
 
 # 1. Domain -> this PC (dashboard stays loopback-only).
 $Hosts = "$env:SystemRoot\System32\drivers\etc\hosts"

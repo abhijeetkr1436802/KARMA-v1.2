@@ -118,17 +118,26 @@ def build_standalone_app():
     # Create Distribution Info Readme
     dist_readme = os.path.join(dist_karma_dir, "HOW_TO_RUN.txt")
     with open(dist_readme, "w", encoding="utf-8") as f:
-        f.write("""==================================================================
-   K.A.R.M.A: AUTONOMOUS AI THREAT DECEPTION PLATFORM (v1.0)
-   Department of Computer Science & Engineering • Major Project
+        f.write(r"""==================================================================
+   K.A.R.M.A: AUTONOMOUS AI THREAT DECEPTION PLATFORM (v1.2)
+   Cyber Security & Engineering • Semester VI Diploma Major Project
+   The Oxford Evening Polytechnic
 ==================================================================
 
 HOW TO RUN ON ANY WINDOWS PC (NO PYTHON / PIP INSTALLATION REQUIRED):
 
-1. Double-click 'KARMA_Cloud_SIEM.exe' to launch the Control Panel GUI.
-2. Click '🚀 LAUNCH K.A.R.M.A SIEM SERVER' to start all Honeypot sensors.
-3. Click '🌐 Open Web Dashboard' to launch the SIEM Monitoring Console.
-4. Click '🧪 Tester / Attacker' to open the Verification Suite.
+1. Double-click 'KARMA_Cloud_SIEM.exe' to open the Control Panel.
+   (Windows SmartScreen: click 'More info' -> 'Run anyway'; the exe is not code-signed.)
+2. Tick the decoys you want and click '🚀 LAUNCH K.A.R.M.A SIEM SERVER'.
+3. Open a browser on this PC at http://localhost:8000
+   (or https://karma-honeypot.com if you ran tools\setup-demo.ps1).
+4. Log in with the admin token stored in:
+       %USERPROFILE%\.karma\admin-token
+   Show it in PowerShell:  Get-Content $env:USERPROFILE\.karma\admin-token
+5. Optional: click '🧪 Tester / Attacker' to fire sample attacks at the decoys.
+6. To stop, click '🛑 STOP K.A.R.M.A SIEM SERVER'.
+
+Optional AI Copilot: paste a DeepSeek API key in the Control Panel and click 'Save Key'.
 
 DEVELOPER TEAM:
 - Abhijeet Kumar (Team Lead & Core Architect)
@@ -142,7 +151,7 @@ PROJECT GUIDE:
 """)
 
     # Zip the final bundle for easy distribution
-    zip_path = os.path.join(dist_dir, "KARMA_Cloud_SIEM_Standalone_v1.0.zip")
+    zip_path = os.path.join(dist_dir, "KARMA_Cloud_SIEM_Standalone_v1.2.zip")
     print(f"[+] Creating redistributable ZIP archive: {zip_path}...")
     
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -158,7 +167,7 @@ PROJECT GUIDE:
     print(f" Executable Folder : {dist_karma_dir}")
     print(f" ZIP Package File  : {zip_path}")
     print("==================================================================")
-    print(" You can copy 'KARMA_Cloud_SIEM_Standalone_v1.0.zip' or the folder")
+    print(" You can copy 'KARMA_Cloud_SIEM_Standalone_v1.2.zip' or the folder")
     print(" to any Windows PC and double-click 'KARMA_Cloud_SIEM.exe' to run!\n")
 
 if __name__ == "__main__":

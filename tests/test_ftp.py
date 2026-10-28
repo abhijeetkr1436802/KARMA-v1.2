@@ -35,12 +35,10 @@ class FTPTests(unittest.TestCase):
             lines=[]
             self.ftp.retrlines('LIST',lines.append)
             self.assertTrue(any('reports' in line for line in lines))
-            self.ftp.cwd('reports')
             data=io.BytesIO()
-            self.ftp.retrbinary('RETR company_data_2026.pdf',data.write)
-            self.assertTrue(data.getvalue().startswith(b'%PDF'))
-            self.assertEqual(self.ftp.size('company_data_2026.pdf'),len(data.getvalue()))
-            self.ftp.cwd('..')
+            self.ftp.retrbinary('RETR AEGIS_Financials.xlsm',data.write)
+            self.assertTrue(data.getvalue().startswith(b'PK'))
+            self.assertEqual(self.ftp.size('AEGIS_Financials.xlsm'),len(data.getvalue()))
         self.assertTrue(all('test-password-never-log' not in event['payload'] for event in db.get_recent_logs()))
         self.ftp.quit()
 

@@ -39,8 +39,12 @@ There is no built-in off-host backup, tamper-proof audit ledger, or automatic di
 
 Private LAN/loopback events display the operator-configured Bengaluru lab marker on
 both Esri maps. Tooltips, reports and new CSV exports label its source as configured.
-This is not IP geolocation. Public, documentation, multicast and unspecified addresses
-have no coordinates. API reads apply the current lab setting to historical records;
+This is not IP geolocation. Public (globally routable) addresses are located at
+city level with ip-api.com when the event is logged (only the IP is sent, over HTTP;
+cached one day; at most 40 lookups a minute) and the result is stored with the event.
+Set `KARMA_GEOIP_ENABLED=0` to never contact ip-api.com. Documentation, multicast and
+unspecified addresses, and public addresses that could not be looked up, have no
+coordinates. API reads apply the current lab setting to historical records;
 stored event coordinates describe the configuration at event creation. Existing CSV
 files are not rewritten. Set `KARMA_LAB_LOCATION_ENABLED=0` to disable the override.
 
@@ -63,7 +67,7 @@ files, and SFTP uploads are rejected.
 - WebSockets: 64 clients, 100 queued events per client, slow clients time out. Overflow drops oldest queued events; the dashboard refreshes from persisted state.
 - Request logs and application errors go to service stdout/stderr; capture and rotate those logs through the service manager.
 
-The dashboard uses pinned CDN versions of Chart.js and Leaflet, plus external map tiles/fonts. Charts/maps may be unavailable offline, while core tables remain usable. For environments that prohibit third-party asset requests, vendor those assets and use approved map tiles before deployment.
+Chart.js, Leaflet, the fonts and a 1:110m world outline (Natural Earth via world-atlas) are bundled in `frontend/vendor`. Only map tiles (Esri/OpenStreetMap) and public-IP geolocation (ip-api.com) use the internet; offline, maps fall back to the bundled outlines. For environments that prohibit third-party requests, set `KARMA_GEOIP_ENABLED=0` and use approved map tiles.
 
 ## Release acceptance
 

@@ -215,6 +215,22 @@ function setFlow(i) {
   if (!RM) gsap.fromTo(say, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: .5, ease: 'expo.out' });
 }
 
+/* demo story: same nodes as the flow, no packet */
+const STORY = [
+  'The attacker scans the KARMA PC with Nmap. Every probed port is logged as Network Service Discovery.',
+  'robots.txt and a forgotten developer comment in the page source point to a deploy file on the file server.',
+  'Any password works. The attacker lands in a fake Ubuntu shell, and every command they type is recorded.',
+  'They download deploy.env and the company documents. The first byte read raises a Decoy file read alert.',
+  'The keys are honeytokens. The moment the stolen API key or password is used, KARMA knows: T1078, risk 95.',
+  'KARMA quarantines the attacker. Every new attempt is refused and shown as BLOCKED on the dashboard.',
+];
+function setStory(i) {
+  $$('#storyFlow .node').forEach((n, k) => { n.classList.toggle('on', k === i); n.classList.toggle('done', k < i); });
+  const say = $('#storySay');
+  say.textContent = STORY[i];
+  if (!RM) gsap.fromTo(say, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: .5, ease: 'expo.out' });
+}
+
 /* stack anatomy */
 function setStack(i) {
   $$('#plates .plate').forEach((p, k) => {
@@ -245,6 +261,7 @@ const HOOKS = {
   map: { enter: s => $('#mapVid').play().catch(() => {}) },
   type: { enter: () => { verdict(); } },
   anatomy: { enter: () => setFlow(0), step: (s, k) => setFlow(k) },
+  story: { enter: () => setStory(0), step: (s, k) => setStory(k) },
   stack: { enter: () => setStack(0), step: (s, k) => setStack(k) },
   nums: { enter: countUp },
 };

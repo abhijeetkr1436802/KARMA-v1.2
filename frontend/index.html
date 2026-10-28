@@ -9,12 +9,8 @@
     <!-- Favicon -->
     <link rel="icon" type="image/x-icon" href="/static/Project_Assets/logo_icon.ico">
 
-    <!-- Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
-        rel="stylesheet">
+    <!-- Fonts (bundled locally: works without internet) -->
+    <link rel="stylesheet" href="/static/css/fonts.css">
 
     <!-- Leaflet CSS for World Map -->
     <link rel="stylesheet" href="/static/vendor/leaflet.css" />
@@ -60,7 +56,7 @@
             </button>
 
             <button class="btn btn-danger" id="btnResetData"
-                title="Reset system telemetry and clear all charts">🗑️ Reset System</button>
+                title="Demo reset: clear telemetry, unblock every IP and switch to Contain mode">🗑️ Reset System</button>
         </div>
     </header>
 
@@ -1169,6 +1165,21 @@
             </div>
             <div class="modal-card-footer">
                 <button class="btn btn-secondary" id="btnModalClose2">Close Report</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SESSION REPLAY MODAL -->
+    <div class="modal-overlay" id="replayModal">
+        <div class="modal-card" style="max-width: 960px; width: 94%;">
+            <div class="modal-card-header">
+                <h3 id="replayTitle">Session replay</h3>
+                <span class="modal-close-btn" onclick="closeReplay()">&times;</span>
+            </div>
+            <div class="modal-card-body"><pre id="replayTerm" class="replay-term"></pre></div>
+            <div class="modal-card-footer">
+                <button class="btn btn-secondary" onclick="skipReplay()">Show all</button>
+                <button class="btn btn-secondary" onclick="closeReplay()">Close</button>
             </div>
         </div>
     </div>

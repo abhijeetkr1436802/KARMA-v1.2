@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, IPvAnyAddress
 from starlette.concurrency import run_in_threadpool
-from backend import config, database as db, notifier
+from backend import config, database as db, notifier, firewall
 from backend.security import RequestGuard, load_admin_token, session_value, COOKIE_NAME, SESSION_SECONDS
 from backend.engine.csv_logger import audit_csv_logger
 from backend.engine.active_defense import active_defense_engine
@@ -213,6 +213,22 @@ def attackers(limit: int = Query(1000, ge=1, le=1000), offset: int = Query(0, ge
     return db.get_attackers_list(limit, offset)
 
 
+@app.get("/api/attackers/{ip}/events")
+def attacker_events(ip: IPvAnyAddress, limit: int = Query(500, ge=1, le=1000)):
+    """One attacker's events, oldest first: drives session replay and the incident report."""
+    conn = db.get_db()
+    try:
+        rows = conn.execute("SELECT * FROM (SELECT * FROM attack_logs WHERE attacker_ip=? ORDER BY id DESC LIMIT ?) ORDER BY id",
+                            (str(ip), limit)).fetchall()
+        profile = conn.execute("SELECT * FROM attackers WHERE ip=?", (str(ip),)).fetchone()
+    finally:
+        conn.close()
+    if not rows:
+        raise HTTPException(404, "No events for this IP")
+    return {"profile": db.with_location(profile, "ip") if profile else None,
+            "events": [db.with_location(r) for r in rows]}
+
+
 @app.get('/api/document-events')
 def document_events():
     conn = db.get_db()
@@ -276,8 +292,11 @@ def attacker_report(ip: IPvAnyAddress):
 
 @app.post("/api/reset")
 def reset():
+    """Demo reset: clear telemetry, unblock every IP and go back to Contain mode."""
     db.clear_all_data()
-    return {"status": "SUCCESS"}
+    firewall.clear()
+    active_defense_engine.set_mode("contain")
+    return {"status": "SUCCESS", "mode": "contain"}
 
 
 @app.get("/api/decoys")
