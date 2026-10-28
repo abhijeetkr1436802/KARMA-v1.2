@@ -7,9 +7,9 @@ Developed by Abhijeet Kumar, Kanaka C, Raghunandan T V, and Sanjay Kashyap at Th
 ## Documentation
 
 - [Getting started](#getting-started-step-by-step) and [Live demo setup](#live-demo-setup-httpskarma-honeypotcom-with-windows-and-linux-attackers) (below)
-- [Decoys and attacks guide](docs/DECOYS_AND_ATTACKS.md): every decoy, trap and honeytoken and how to attack it
-- [Presentation speaker guide](docs/SPEAKER_GUIDE.md): what to say on each of the 25 slides
-- [Viva Q&A](docs/VIVA_QA.md): short answers to likely examiner questions
+- [Decoys and attacks guide](docs/KARMA_Decoys_and_Attacks_Guide.pdf): every decoy, trap and honeytoken and how to attack it
+- [Presentation speaker guide](docs/KARMA_Speaker_Guide.pdf): what to say on each of the 25 slides
+- [Viva Q&A](docs/KARMA_Viva_QA.pdf): short answers to likely examiner questions
 
 ## Getting started (step by step)
 
