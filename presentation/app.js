@@ -166,13 +166,17 @@ function classify(input) {
   return { svc, id: 'T1595', name: 'Active Scanning', tactic: 'Reconnaissance', risk: 50 };
 }
 // What the decoy answers (backend/sensors/virtual_shell.py and the web decoy)
-function seen(cmd, svc) {
+function seen(cmd, svc, blocked) {
   if (svc === 'WEB_HONEYPOT') return 'A convincing corporate portal page.\nNothing looks wrong, but every byte\nyou sent has already been logged.';
+  // Contain mode: a quarantine-level command ends the session before any output is sent.
+  if (blocked) return 'Session ended by KARMA containment policy.';
   const c = cmd.split(/\s+/)[0];
+  const arg = cmd.split(/\s+/).slice(1).find(a => !a.startsWith('-')) || '';
   const out = {
     whoami: 'root', id: 'uid=0(root) gid=0(root) groups=0(root)', hostname: 'aegis-gateway',
-    pwd: '/root', uname: 'Linux', ls: 'company  deploy.env  notes.txt',
-    cat: cmd.includes('/etc/passwd') ? 'root:x:0:0:root:/root:/bin/bash\nadmin:x:1000:1000:Operations:/home/admin:/bin/bash' : 'cat: ' + (cmd.split(/\s+/)[1] || '') + ': No such file or directory',
+    pwd: '/root', uname: 'Linux aegis-gateway 5.15.0-76-generic x86_64 GNU/Linux',
+    ls: /^ls\s+-\w*l/.test(cmd) ? '-rw-r--r-- 1 root root    25878 Oct 01 00:00 AEGIS_Financials.xlsm\n-rw-r--r-- 1 root root    40674 Oct 01 00:00 AEGIS_Letterhead.docm\n-rw-r--r-- 1 root root    44641 Oct 01 00:00 AEGIS_Project_Atlas_Pitch.pptm\n-rw-r--r-- 1 root root      120 Oct 01 00:00 README.txt' : 'AEGIS_Financials.xlsm\nAEGIS_Letterhead.docm\nAEGIS_Project_Atlas_Pitch.pptm\nREADME.txt',
+    cat: cmd.includes('/etc/passwd') ? 'root:x:0:0:root:/root:/bin/bash\nadmin:x:1000:1000:Operations:/home/admin:/bin/bash' : arg ? 'bash: ' + (arg.startsWith('/') ? arg : '/root/' + arg) : 'cat: file operand required',
   }[c];
   return out ?? `bash: ${c}: command not found`;
 }
@@ -187,7 +191,8 @@ function verdict() {
   $('#vBar').style.width = score + '%';
   const q = score >= 75;
   $('#vAct').textContent = q ? 'Quarantines the attacker' : 'Logs it and keeps watching';
-  $('#seenOut').textContent = seen(atkInput.value.trim(), v.svc);
+  $('#seenOut').textContent = seen(atkInput.value.trim(), v.svc, q);
+  $('#seenOut').classList.toggle('long', /^-rw/.test($('#seenOut').textContent));
   $('.v-act').classList.toggle('calm', !q);
 }
 atkInput.addEventListener('input', verdict);
@@ -327,6 +332,7 @@ addEventListener('keydown', e => {
   else if (e.key === 'Escape') document.activeElement.blur();
   else if (e.key.toLowerCase() === 'f') { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); }
 });
+$('#home').addEventListener('click', () => show(0, -1));
 let wheelLock = 0;
 addEventListener('wheel', e => {
   if (Math.abs(e.deltaY) < 25 || Date.now() < wheelLock) return;

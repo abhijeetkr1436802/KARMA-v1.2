@@ -12,7 +12,7 @@
   <canvas id="net" aria-hidden="true"></canvas>
 
   <header class="chrome" id="chrome">
-    <span class="wordmark">KARMA</span>
+    <span class="wordmark" id="home" title="Back to the first slide (Home)">KARMA</span>
     <span class="chapter" id="chapter">Cold open</span>
   </header>
 
@@ -78,7 +78,7 @@
         <span class="nm" data-i="1">Tata Technologies,</span>
         <span class="nm" data-i="2">and 29 lakh more.</span>
       </h2>
-      <p class="note in">It is not somewhere else. It is the same week, the same country.</p>
+      <p class="note in">It is not somewhere else. It is here, in the same country.</p>
     </div>
     <div class="evidence">
       <div class="pile">
@@ -254,7 +254,7 @@
       <button data-ex="' OR 1=1 --">' OR 1=1 --</button>
       <button data-ex="/.env">/.env</button>
     </div>
-    <p class="note type-note">These verdicts come from the same rules KARMA's engine uses.</p>
+    <p class="note type-note">These verdicts come from the same rules KARMA's engine uses. Web payloads are scored as a path or a login-form entry.</p>
   </section>
 
   <!-- ATTACK STORY -->
@@ -359,7 +359,7 @@
       <p class="lede in">A honeypot invites attackers in, so KARMA itself has to be hard to break.</p>
     </div>
     <div class="cards two">
-      <div class="card in"><h3>Nothing runs</h3><p>The shell is simulated: no programs, pipes, installs or host files. Sessions end after 15 minutes.</p></div>
+      <div class="card in"><h3>Nothing runs</h3><p>The shell is simulated: no programs, pipes, installs or host files. Sessions end after 30 minutes, or 10 minutes idle.</p></div>
       <div class="card in"><h3>Console stays private</h3><p>The dashboard answers only the KARMA PC, needs a 43-character admin token, and logs out after 8 hours.</p></div>
       <div class="card in"><h3>Floods are capped</h3><p>10 logins and 600 requests a minute per IP; 64 clients per decoy.</p></div>
       <div class="card in"><h3>Secrets stay hidden</h3><p>Captured passwords are blanked out of the logs; API keys live in a git-ignored <code>.env</code>.</p></div>
@@ -414,11 +414,11 @@
         <p>Rule-based detection; a careful attacker can phrase around it.</p>
         <p>Geolocation is city-level and approximate; VPNs show the provider.</p>
         <p>Through the tunnel every attacker appears as 127.0.0.1.</p>
-        <p>Quarantine blocks KARMA's decoys, not the OS firewall.</p>
+        <p>OS firewall blocking is optional, off by default, and needs Administrator rights.</p>
         <p>One admin token, no user roles.</p>
       </div>
       <div class="lim-col lim-next in"><h3>Future scope</h3>
-        <p><b>Firewall integration:</b> enforce quarantine in Windows Firewall or iptables.</p>
+        <p><b>Firewall hardening:</b> on by default, with rules that survive a restart.</p>
         <p><b>Distributed sensors</b> on many hosts, reporting to one KARMA server.</p>
         <p><b>Scalable storage:</b> PostgreSQL or Elasticsearch with retention.</p>
         <p><b>Richer decoys:</b> bigger fake filesystem, malware capture, SMB, MySQL, Redis.</p>

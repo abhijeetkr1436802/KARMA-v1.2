@@ -9,6 +9,7 @@ HOW TO RUN (no internet needed)
      Space / → / ↓ / PageDown ... next (some slides build step by step first)
      ← / ↑ / PageUp ............. back
      Home / End ................. first / last slide
+     Click KARMA (top left) ..... first slide
    A presentation clicker works too (it sends PageUp/PageDown).
 
 25 slides, about 18–22 minutes. It is designed at 1920×1080 and scales to any
@@ -27,7 +28,7 @@ SLIDE ORDER
   18–19  Anatomy of an attack, anatomy of the stack
   20     Security of KARMA itself
   21–22  The 14 system test cases (TC-01 to TC-14, as in the project report), KARMA in numbers
-  23     Limitations and future scope (same items as report section 6.4)
+  23     Limitations and future scope (based on report section 6.4)
   24–25  Conclusion, thank you
 
 SLIDES THAT BUILD (press → to advance inside the slide)
