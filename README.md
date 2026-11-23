@@ -219,8 +219,22 @@ It is a local name that only works **on the KARMA PC**, made in two parts:
 
 When the certificate exists, KARMA serves the dashboard at **https://karma-honeypot.com**
 (port 443) instead of http://localhost:8000. The dashboard still only accepts connections from
-the KARMA PC itself. Attacker PCs never use the domain; they target the KARMA PC's **IP address**
-(or a `bore.pub` tunnel address, see Demo step 6).
+the KARMA PC itself. Attacker PCs target the KARMA PC's **IP address** (or a `bore.pub` tunnel
+address, see Demo step 6). The name does **not** work on attacker PCs until you add it to *their*
+hosts file too, pointing at the KARMA PC's LAN IP (the setup script prints these lines):
+
+```powershell
+# Windows attacker (Administrator PowerShell)
+Add-Content $env:SystemRoot\System32\drivers\etc\hosts "`r`n<KARMA-IP> karma-honeypot.com www.karma-honeypot.com"; ipconfig /flushdns
+```
+
+```bash
+# Linux attacker
+echo '<KARMA-IP> karma-honeypot.com www.karma-honeypot.com' | sudo tee -a /etc/hosts
+```
+
+Then `nmap -sT -sV -p 21,23,2222,3389,8080 karma-honeypot.com` and `ssh root@karma-honeypot.com -p 2222`
+work from the attacker. The dashboard (443) still refuses them; only the decoys answer.
 
 To use a different name, put `KARMA_DOMAIN=your-name.com` in `.env` **before** running the
 setup script. The script and the certificate both read it from there.
@@ -403,7 +417,8 @@ Remove-Item -Recurse "$env:USERPROFILE\.karma\tls"
 | `Could not load KARMA settings` | Run `python -m pip install -r requirements.txt` and run the script from the `KARMA-v1.2` folder |
 | `karma-honeypot.com` does not open | Start the server first; run `ipconfig /flushdns`; check the hosts line with `Get-Content $env:SystemRoot\System32\drivers\etc\hosts` |
 | Browser says *Not secure* | Restart the browser; use Edge/Chrome; re-run the setup script as the same Windows user that runs KARMA |
-| Attackers cannot connect | Same hotspot? Correct IP? Re-run the setup script (fixes firewall Block rules); check the attacker IP is not blocked in **Attacker Profiles** |
+| Attacker: `nmap karma-honeypot.com` finds nothing | The name only exists on the KARMA PC; add the hosts line on the attacker (see *What `karma-honeypot.com` is*) or use the IP |
+| Attackers cannot connect | Same hotspot? Correct IP? Re-run the setup script (fixes firewall Block rules); check the attacker IP is not blocked in **Attacker Profiles**. College/office Wi-Fi often blocks PC-to-PC traffic (client isolation): use the KARMA PC's Mobile hotspot instead |
 | SSH says `Connection reset` | That attacker IP is quarantined; unblock it in **Attacker Profiles** |
 | `Port ... is already used` | Close the other program (Remote Desktop for 3389) or untick that decoy |
 

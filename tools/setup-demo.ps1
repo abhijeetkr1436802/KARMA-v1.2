@@ -42,3 +42,10 @@ foreach ($c in $busy) {
 $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' }).IPAddress -join ', '
 Write-Host "`nDone. Start KARMA with: python run.py   then open https://$Domain"
 Write-Host "Attacker PCs target this PC's LAN address: $ip"
+# The hosts line above only exists on this PC; attackers need their own copy pointing at the LAN IP.
+$lan = (Get-NetIPConfiguration | Where-Object IPv4DefaultGateway | Select-Object -First 1).IPv4Address.IPAddress
+if (-not $lan) { $lan = '<KARMA-IP>' }
+Write-Host "`nTo let attackers use the name $Domain, run once on each attacker PC (as admin/root):"
+Write-Host "  Windows: Add-Content `$env:SystemRoot\System32\drivers\etc\hosts `"``r``n$lan $Domain www.$Domain`"; ipconfig /flushdns"
+Write-Host "  Linux:   echo '$lan $Domain www.$Domain' | sudo tee -a /etc/hosts"
+Write-Host "Then: nmap -sT -sV -p 21,23,2222,3389,8080 $Domain   and   ssh root@$Domain -p 2222"
